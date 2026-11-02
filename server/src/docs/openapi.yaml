@@ -369,15 +369,16 @@ paths:
   /admin/tickets/{id}/draft:
     get:
       tags: [ Admin - AI ]
-      summary: AI-drafted reply (generated on first open, then cached)
+      summary: Read the saved AI draft (never generates)
       description: |
-        Built from the ticket, the referenced book's real data, computed royalty-cycle facts and only
-        the knowledge-base sections relevant to the ticket's category. Cached until the conversation
-        changes. If the AI is unavailable the response is a clearly labelled **template** draft
-        (`source: template`) - the endpoint still returns 200.
+        Strictly read-only: returns the draft already saved for this ticket, or **204** when none exists.
+        It never calls the LLM and consumes no tokens, so opening a ticket is free. `stale: true` means the
+        ticket, book or conversation changed after the draft was written - the admin decides whether to
+        regenerate (`POST`); the server never does it silently.
       parameters: [ { $ref: '#/components/parameters/TicketId' } ]
       responses:
-        '200': { description: Draft, content: { application/json: { schema: { $ref: '#/components/schemas/Draft' } } } }
+        '200': { description: Saved draft, content: { application/json: { schema: { $ref: '#/components/schemas/Draft' } } } }
+        '204': { description: No draft has been generated for this ticket yet }
         '409': { description: Ticket is closed }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -385,10 +386,18 @@ paths:
         "422": { $ref: "#/components/responses/ValidationError" }
     post:
       tags: [ Admin - AI ]
-      summary: Force a fresh draft
+      summary: Generate (or regenerate) an AI draft - explicit admin action
+      description: |
+        The only endpoint that produces a draft; the UI calls it when the admin clicks **Generate AI Response**.
+        Built from the ticket, the referenced book's real data, computed royalty-cycle facts and only the
+        knowledge-base sections relevant to the category, then passed through the quality gate. Concurrent
+        requests for one ticket share a single LLM call. If the AI is unavailable the response is a clearly
+        labelled **template** draft (`source: template`) - the endpoint still returns 200. Rate limited per admin.
       parameters: [ { $ref: '#/components/parameters/TicketId' } ]
       responses:
         '200': { description: Draft, content: { application/json: { schema: { $ref: '#/components/schemas/Draft' } } } }
+        '409': { description: Ticket is closed }
+        '429': { description: Too many generations in a minute }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -632,7 +641,8 @@ components:
         model: { type: string, nullable: true }
         notes: { type: array, items: { type: string }, description: Things the admin should verify before sending }
         generatedAt: { type: string, format: date-time }
-        cached: { type: boolean }
+        cached: { type: boolean, description: "True when read from storage; false when just generated" }
+        stale: { type: boolean, description: "True when the ticket or conversation changed after this draft was written" }
         aiAvailable: { type: boolean }
     AiStatus:
       type: object

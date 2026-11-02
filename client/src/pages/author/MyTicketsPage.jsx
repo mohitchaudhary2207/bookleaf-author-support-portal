@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BookOpen, ChevronRight, Clock, MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { api } from '../../api/client.js';
 import { useDebouncedCallback, useFetch } from '../../api/hooks.js';
-import { EmptyState, ErrorState, PageHeader, Spinner } from '../../components/Common.jsx';
+import { EmptyState, ErrorState, PageHeader, PageSkeleton } from '../../components/Common.jsx';
 import { StatusBadge } from '../../components/Badges.jsx';
 import { useLiveEvents } from '../../context/LiveContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -26,17 +27,17 @@ export default function MyTicketsPage() {
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t, t === 'All' ? items.length : items.filter((i) => i.status === t).length])), [items]);
   const visible = tab === 'All' ? items : items.filter((i) => i.status === tab);
 
-  if (loading) return <Spinner label="Loading your tickets…" />;
+  if (loading) return <PageSkeleton label="Loading your tickets…" />;
   if (error) return <div className="page"><ErrorState error={error} onRetry={reload} /></div>;
 
   return (
     <div className="page narrow">
-      <PageHeader title="My Tickets" subtitle="Your conversations with the BookLeaf support team.">
-        <Link className="btn btn-primary" to="/tickets/new">New query</Link>
+      <PageHeader eyebrow="Support" title="My Tickets" subtitle="Your conversations with the BookLeaf support team.">
+        <Link className="btn btn-primary" to="/tickets/new"><MessageSquarePlus size={18} />New query</Link>
       </PageHeader>
 
       {items.length === 0 ? (
-        <EmptyState icon="💬" title="You have not raised any tickets" action={{ to: '/tickets/new', label: 'Submit your first query' }}>
+        <EmptyState icon={MessageSquare} title="You have not raised any tickets" action={{ to: '/tickets/new', label: 'Submit your first query' }}>
           Questions about royalties, ISBNs, printing or your book's status? We are here to help.
         </EmptyState>
       ) : (
@@ -49,7 +50,9 @@ export default function MyTicketsPage() {
             ))}
           </div>
 
-          {visible.length === 0 ? <p className="muted center pad">No {tab.toLowerCase()} tickets.</p> : (
+          {visible.length === 0 ? (
+            <EmptyState icon={MessageSquare} title={`No ${tab.toLowerCase()} tickets`}>Nothing here right now.</EmptyState>
+          ) : (
             <ul className="ticket-list">
               {visible.map((t) => (
                 <li key={t.id}>
@@ -58,13 +61,17 @@ export default function MyTicketsPage() {
                       <div className="ticket-top">
                         <span className="mono muted">{t.ticketNumber}</span>
                         <StatusBadge status={t.status} />
-                        {t.awaitingYourReply && <span className="badge badge-new">New reply</span>}
+                        {t.awaitingYourReply && <span className="badge badge-new plain">New reply</span>}
                       </div>
                       <h3>{t.subject}</h3>
                       <p className="muted clamp">{t.description}</p>
-                      <p className="muted small">{t.book ? t.book.title : 'General / Account Level'} · {t.messageCount} repl{t.messageCount === 1 ? 'y' : 'ies'}</p>
+                      <p className="muted xs ticket-meta">
+                        <span><BookOpen size={13} />{t.book ? t.book.title : 'General / Account Level'}</span>
+                        <span><MessageSquare size={13} />{t.messageCount} repl{t.messageCount === 1 ? 'y' : 'ies'}</span>
+                        <span><Clock size={13} />Updated {timeAgo(t.updatedAt)}</span>
+                      </p>
                     </div>
-                    <div className="ticket-when muted small">Updated {timeAgo(t.updatedAt)}</div>
+                    <ChevronRight className="ticket-chevron" size={20} aria-hidden />
                   </Link>
                 </li>
               ))}

@@ -27,7 +27,7 @@ export async function runEval({ aiProvider, log = () => {} } = {}) {
       const created = container.tickets.createTicket(user, { bookId: sample.bookId, subject: sample.subject, description: sample.description });
       await container.tickets.whenIdle();
       const detail = container.tickets.getForAdmin(admin, created.id);
-      const draft = await container.tickets.getDraft(admin, created.id);
+      const draft = await container.tickets.generateDraft(admin, created.id); // drafts are explicit-only now
       const t = detail.ticket;
 
       const bookRow = toBookFacts(container.repos.books.findRow(sample.bookId));

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Check, Send } from 'lucide-react';
 import { api } from '../../api/client.js';
 import { useDebouncedCallback, useFetch } from '../../api/hooks.js';
 import { StatusBadge } from '../../components/Badges.jsx';
-import { Card, ErrorState, Spinner } from '../../components/Common.jsx';
+import { Alert, Card, ConfirmModal, ErrorState, PageSkeleton } from '../../components/Common.jsx';
 import Conversation from '../../components/Conversation.jsx';
 import { useLiveEvents } from '../../context/LiveContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -15,7 +16,11 @@ function StatusTimeline({ status }) {
   const idx = STEPS.indexOf(status);
   return (
     <ol className="timeline" aria-label={`Ticket status: ${status}`}>
-      {STEPS.map((s, i) => <li key={s} className={i < idx ? 'done' : i === idx ? 'current' : ''}><span className="pip" />{s}</li>)}
+      {STEPS.map((s, i) => (
+        <li key={s} className={i < idx ? 'done' : i === idx ? 'current' : ''} aria-current={i === idx ? 'step' : undefined}>
+          <span className="pip">{i < idx && <Check size={11} strokeWidth={3.5} />}</span>{s}
+        </li>
+      ))}
     </ol>
   );
 }
@@ -27,6 +32,7 @@ export default function AuthorTicketPage() {
   const [reply, setReply] = useState('');
   const [replyError, setReplyError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   // Real time: refetch when an admin replies / changes the status of THIS ticket.
   const debouncedRefresh = useDebouncedCallback(refresh, 150);
@@ -35,7 +41,7 @@ export default function AuthorTicketPage() {
     debouncedRefresh();
   }, { ticketId: id });
 
-  if (loading) return <Spinner label="Loading ticket…" />;
+  if (loading) return <PageSkeleton label="Loading ticket…" />;
   if (error) return <div className="page"><ErrorState error={error} onRetry={reload} /></div>;
 
   const { ticket, messages, attachments } = data;
@@ -54,13 +60,13 @@ export default function AuthorTicketPage() {
   };
 
   const close = async () => {
-    if (!window.confirm('Close this ticket? You can open a new one any time.')) return;
+    setConfirmClose(false);
     try { setData(await api.post(`/tickets/${id}/close`)); toast.success('Ticket closed.'); } catch (err) { toast.error(err.message); }
   };
 
   return (
     <div className="page narrow">
-      <p className="crumbs"><Link to="/tickets">← My Tickets</Link></p>
+      <p className="crumbs"><Link to="/tickets"><ArrowLeft size={15} />My Tickets</Link></p>
       <div className="ticket-head">
         <div>
           <p className="mono muted">{ticket.ticketNumber}</p>
@@ -70,10 +76,10 @@ export default function AuthorTicketPage() {
         <StatusBadge status={ticket.status} />
       </div>
 
-      <Card><StatusTimeline status={ticket.status} /></Card>
+      <Card title="Ticket progress"><StatusTimeline status={ticket.status} /></Card>
 
       {messages.length === 0 && !closed && (
-        <div className="alert alert-info">We have received your query and will reply here within 24–48 hours. This page updates automatically.</div>
+        <Alert kind="info">We have received your query and will reply here within 24–48 hours. This page updates automatically.</Alert>
       )}
 
       <Card title="Conversation">
@@ -81,19 +87,23 @@ export default function AuthorTicketPage() {
       </Card>
 
       {closed ? (
-        <div className="alert alert-info">This ticket is closed. <Link to="/tickets/new">Open a new query</Link> if you need more help.</div>
+        <Alert kind="info">This ticket is closed. <Link to="/tickets/new">Open a new query</Link> if you need more help.</Alert>
       ) : (
         <Card title={ticket.status === 'Resolved' ? 'Not fixed? Reply to reopen' : 'Add a reply'}>
           <form onSubmit={send}>
-            {replyError && <div className="alert alert-error" role="alert">{replyError}</div>}
+            {replyError && <Alert kind="error">{replyError}</Alert>}
             <textarea rows={4} value={reply} maxLength={5000} onChange={(e) => setReply(e.target.value)} placeholder="Write your message…" aria-label="Your reply" />
             <div className="form-actions">
-              <button type="button" className="btn btn-ghost" onClick={close}>Close ticket</button>
-              <button className="btn btn-primary" disabled={busy || !reply.trim()}>{busy ? 'Sending…' : 'Send reply'}</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirmClose(true)}>Close ticket</button>
+              <button className="btn btn-primary" disabled={busy || !reply.trim()}>{busy ? <><span className="spinner sm" />Sending…</> : <><Send size={16} />Send reply</>}</button>
             </div>
           </form>
         </Card>
       )}
+
+      <ConfirmModal open={confirmClose} title="Close this ticket?" confirmLabel="Close ticket" onConfirm={close} onCancel={() => setConfirmClose(false)}>
+        <p>You can open a new query any time if you need more help.</p>
+      </ConfirmModal>
     </div>
   );
 }

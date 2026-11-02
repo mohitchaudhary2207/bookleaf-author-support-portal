@@ -42,7 +42,8 @@ async function request(method, path, { body, query, signal } = {}) {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const err = new ApiError(res.status, data);
-    if (res.status === 401 && !path.startsWith('/auth/login')) onUnauthorized(err);
+    // A 401 from the sign-in call or the on-load session probe just means "not signed in" - only an API call made while signed in means the session ended.
+    if (res.status === 401 && !path.startsWith('/auth/login') && path !== '/auth/me') onUnauthorized(err);
     throw err;
   }
   return data;

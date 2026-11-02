@@ -44,10 +44,10 @@ describe('AI integration: degradation, caching and cost control', () => {
     assert.ok(d.activity.some((a) => a.action === 'triaged_by_rules'));
   });
 
-  it('serves a labelled template draft (HTTP 200) during an outage, then upgrades to an AI draft once recovered', async () => {
+  it('serves a labelled template draft (HTTP 200) during an outage; a later explicit regenerate upgrades it to an AI draft', async () => {
     const t = await newTicket();
     ctx.provider.failWith = new AIError('rate_limited', '429', { retryable: true });
-    const down = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    const down = await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
     assert.equal(down.status, 200);
     assert.equal(down.body.source, 'template');
     assert.match(down.body.notes[0], /AI draft unavailable - the AI provider is rate-limiting/);
@@ -56,26 +56,43 @@ describe('AI integration: degradation, caching and cost control', () => {
 
     ctx.provider.failWith = null;
     const calls = ctx.provider.calls.length;
-    const recovered = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
-    assert.equal(recovered.body.source, 'ai', 'a cached template is replaced as soon as the AI works again');
+    const reopened = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    assert.equal(reopened.body.source, 'template', 'reading never silently upgrades or regenerates');
+    assert.equal(ctx.provider.calls.length, calls, 'no LLM call from a read');
+    assert.equal(reopened.body.aiAvailable, true, 'the UI can tell the admin the AI is back');
+
+    const recovered = await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    assert.equal(recovered.body.source, 'ai');
     assert.equal(ctx.provider.calls.length, calls + 1);
   });
 
-  it('caches drafts: opening a ticket twice costs ONE LLM call; new messages invalidate the cache', async () => {
+  it('caches drafts: reading is free, generation is explicit; changes only flag the draft as stale', async () => {
     const t = await newTicket();
-    const before = ctx.provider.calls.filter((c) => c.tool === 'submit_reply').length;
-    const first = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
-    const second = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    const draftCalls = () => ctx.provider.calls.filter((c) => c.tool === 'submit_reply').length;
+    const before = draftCalls();
+
+    const none = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    assert.equal(none.status, 204, 'no draft yet -> 204, not a generation');
+    assert.equal(draftCalls(), before);
+
+    const first = await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
     assert.equal(first.body.cached, false);
+    assert.equal(first.body.stale, false);
+    const second = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    const third = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
     assert.equal(second.body.cached, true);
-    assert.equal(ctx.provider.calls.filter((c) => c.tool === 'submit_reply').length, before + 1);
+    assert.equal(third.body.body, first.body.body);
+    assert.equal(draftCalls(), before + 1, 'one generation, any number of reads');
 
     await api.post(`/api/v1/tickets/${t.id}/messages`).set(as(priya)).send({ body: 'Any update on this please?' });
-    const third = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
-    assert.equal(third.body.cached, false);
+    const afterMessage = await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    assert.equal(afterMessage.body.stale, true, 'new author message marks the saved draft stale');
+    assert.equal(draftCalls(), before + 1, 'but does not regenerate it');
 
     const forced = await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
     assert.equal(forced.body.cached, false);
+    assert.equal(forced.body.stale, false);
+    assert.equal(draftCalls(), before + 2);
   });
 
   it('de-duplicates concurrent draft generation for the same ticket', async () => {

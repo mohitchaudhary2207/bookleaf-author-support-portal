@@ -1,7 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
 export const useToast = () => useContext(ToastContext);
+
+const ICON = { success: CheckCircle2, error: AlertCircle, info: Info };
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -23,13 +26,17 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>
-            <span>{t.message}</span>
-            {t.action && <button className="link" onClick={() => { t.action.onClick(); dismiss(t.id); }}>{t.action.label}</button>}
-            <button className="toast-x" aria-label="Dismiss" onClick={() => dismiss(t.id)}>×</button>
-          </div>
-        ))}
+        {toasts.map((t) => {
+          const Icon = ICON[t.kind];
+          return (
+            <div key={t.id} className={`toast toast-${t.kind}`}>
+              <Icon size={18} aria-hidden />
+              <span>{t.message}</span>
+              {t.action && <button className="link" onClick={() => { t.action.onClick(); dismiss(t.id); }}>{t.action.label}</button>}
+              <button className="toast-x" aria-label="Dismiss" onClick={() => dismiss(t.id)}><X size={16} /></button>
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );

@@ -10,7 +10,7 @@ import { AppError } from '../utils/errors.js';
 export function adminRoutes({ tickets, repos, ai }) {
   const router = Router();
 
-  // Each forced regeneration is a paid LLM call: cap them per admin (cached GETs are unaffected).
+  // Every generation is a paid LLM call: cap them per admin (reading a saved draft is unaffected).
   const regenerateLimiter = rateLimit({
     windowMs: 60_000,
     limit: 12,
@@ -49,12 +49,15 @@ export function adminRoutes({ tickets, repos, ai }) {
   });
 
   // ---- AI ----------------------------------------------------------------------------------
-  // GET returns the cached draft (generating it on first open); POST forces a fresh one.
-  router.get('/tickets/:id/draft', validate(schemas.one), asyncHandler(async (req, res) => {
-    res.json(await tickets.getDraft(req.user, req.valid.params.id));
-  }));
+  // GET only READS the saved draft (204 if none) - it never calls the LLM. POST is the single explicit
+  // generate/regenerate action, triggered by the admin clicking "Generate AI Response".
+  router.get('/tickets/:id/draft', validate(schemas.one), (req, res) => {
+    const draft = tickets.getDraft(req.user, req.valid.params.id);
+    if (!draft) return res.status(204).end();
+    return res.json(draft);
+  });
   router.post('/tickets/:id/draft', regenerateLimiter, validate(schemas.one), asyncHandler(async (req, res) => {
-    res.json(await tickets.getDraft(req.user, req.valid.params.id, { regenerate: true }));
+    res.json(await tickets.generateDraft(req.user, req.valid.params.id));
   }));
   router.post('/tickets/:id/reclassify', regenerateLimiter, validate(schemas.one), asyncHandler(async (req, res) => {
     res.json(await tickets.reclassify(req.user, req.valid.params.id));

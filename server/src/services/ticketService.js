@@ -258,10 +258,10 @@ export function createTicketService({ db, repos, ai, events, logger }) {
   }
 
   // ---------------------------------------------------------------------------------------
-  // AI draft (lazy, cached, de-duplicated)
+  // AI draft: generated ONLY on an explicit admin request (generateDraft); reading is free (getDraft)
   // ---------------------------------------------------------------------------------------
 
-  function draftDto(record, { cached }) {
+  function draftDto(record, { cached, stale = false }) {
     return {
       body: record.body,
       source: record.source,
@@ -269,24 +269,36 @@ export function createTicketService({ db, repos, ai, events, logger }) {
       notes: JSON.parse(record.notes || '[]'),
       generatedAt: record.generated_at,
       cached,
+      // True when the ticket, book or conversation changed after this draft was written. The draft is still
+      // returned (it may well be usable); the admin decides whether to regenerate - we never do it silently.
+      stale,
       aiAvailable: ai.status().available,
       aiStatus: ai.status().reason,
     };
   }
 
-  async function getDraft(admin, id, { regenerate = false } = {}) {
+  /**
+   * Read-only: returns the saved draft (flagged `stale` if inputs changed) or null. It NEVER calls the LLM and
+   * never writes, so opening a ticket costs no tokens.
+   */
+  function getDraft(admin, id) {
+    const row = loadAccessible(admin, id);
+    if (row.status === 'Closed') throw conflict('Closed tickets cannot receive replies');
+    const cached = aiRepo.getDraft(id);
+    if (!cached) return null;
+    const bookRow = row.book_id ? books.findRow(row.book_id) : null;
+    const hash = draftInputHash({ ticket: row, thread: tickets.messageRows(id), book: bookRow });
+    return draftDto(cached, { cached: true, stale: cached.input_hash !== hash });
+  }
+
+  /** Explicit generation (first draft or regeneration). Concurrent requests for one ticket share one LLM call. */
+  async function generateDraft(admin, id) {
     const row = loadAccessible(admin, id);
     if (row.status === 'Closed') throw conflict('Closed tickets cannot receive replies');
 
     const bookRow = row.book_id ? books.findRow(row.book_id) : null;
     const thread = tickets.messageRows(id);
     const hash = draftInputHash({ ticket: row, thread, book: bookRow });
-    const cached = aiRepo.getDraft(id);
-
-    // Reuse a cached draft unless: the conversation/ticket changed, the admin asked for a fresh one,
-    // or the cache holds a template made during an outage and the AI has since recovered.
-    const staleTemplate = cached?.source === 'template' && ai.status().available;
-    if (cached && cached.input_hash === hash && !regenerate && !staleTemplate) return draftDto(cached, { cached: true });
 
     if (inFlightDrafts.has(id)) return inFlightDrafts.get(id);
 
@@ -320,7 +332,7 @@ export function createTicketService({ db, repos, ai, events, logger }) {
     // author
     createTicket, listForAuthor, getForAuthor, getAttachmentForDownload, authorReply, authorClose,
     // admin
-    listForAdmin, getForAdmin, updateTicket, adminReply, addNote, reclassify, getDraft,
+    listForAdmin, getForAdmin, updateTicket, adminReply, addNote, reclassify, getDraft, generateDraft,
     // internals exposed for tests / bootstrapping
     runTriage,
     whenIdle: () => Promise.allSettled([...background]),

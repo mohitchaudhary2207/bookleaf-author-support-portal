@@ -47,7 +47,7 @@ describe('AI failure reason is preserved while the circuit breaker is open', () 
         assert.ok(!JSON.stringify(status).includes('SECRET-DETAIL'), 'raw provider text / credentials are never exposed');
 
         const callsBefore = ctx.provider.calls.length;
-        const draft = (await api.get(`/api/v1/admin/tickets/${last.id}/draft`).set(as(admin)));
+        const draft = (await api.post(`/api/v1/admin/tickets/${last.id}/draft`).set(as(admin)));
         assert.equal(draft.status, 200, 'draft endpoint still answers (template) while paused');
         assert.equal(draft.body.source, 'template');
         assert.match(draft.body.notes[0], text, draft.body.notes[0]);
@@ -197,7 +197,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
     const t = await ticket({});
     provider.replyQueue.push(GOOD_ROYALTY);
     const before = draftCalls();
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.equal(d.source, 'ai');
     assert.equal(draftCalls() - before, 1);
     assert.equal(d.body, GOOD_ROYALTY);
@@ -207,7 +207,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
     const t = await ticket({});
     provider.replyQueue.push(BAD_STOCK, GOOD_ROYALTY);
     const before = draftCalls();
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.equal(d.source, 'ai');
     assert.equal(d.body, GOOD_ROYALTY);
     assert.equal(draftCalls() - before, 2, 'exactly one corrective regeneration');
@@ -222,7 +222,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
     const withApology = reply('I\'m truly sorry that your author copies arrived with blurry images and misaligned pages. Please share photos of the defective copies; once verified we arrange a free reprint in 5-7 business days.');
     provider.replyQueue.push(noApology, withApology);
     const before = draftCalls();
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.equal(d.source, 'ai');
     assert.match(d.body, /^Hi Priya,\n\nI'm truly sorry/);
     assert.equal(draftCalls() - before, 2);
@@ -233,7 +233,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
     provider.replyQueue.push(BAD_STOCK, reply('Rest assured, this will be sorted soon. Please wait for our team to respond to your message about the royalties.'));
     const before = draftCalls();
     const messagesBefore = (await api.get(`/api/v1/tickets/${t.id}`).set(as(priya))).body.messages.length;
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.equal(d.source, 'template');
     assert.equal(draftCalls() - before, 2, 'at most one regeneration');
     assert.match(d.notes.join(' '), /did not pass the BookLeaf tone and accuracy checks/);
@@ -246,7 +246,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
     const t = await ticket({});
     const invented = reply(`Your pending royalty is ₹99,999 and will be paid in the run due by ${payoutDate}. Please confirm your bank details in the dashboard today.`);
     provider.replyQueue.push(invented, GOOD_ROYALTY);
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.equal(d.source, 'ai');
     assert.doesNotMatch(d.body, /99,999/);
     assert.match(provider.calls.filter((c) => c.tool === 'submit_reply').at(-1).user, /amount \(₹99,999\)/);
@@ -255,7 +255,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
   it('quality-failure fallbacks do not trip the circuit breaker and are metered as two calls', async () => {
     const t = await ticket({});
     provider.replyQueue.push(BAD_STOCK, BAD_STOCK);
-    await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
+    await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin));
     assert.equal((await api.get('/api/v1/admin/ai/status').set(as(admin))).body.available, true);
     const usage = (await api.get('/api/v1/admin/ai/usage').set(as(admin))).body;
     assert.ok(usage.byPurpose.find((p) => p.purpose === 'draft').calls >= 2);
@@ -264,7 +264,7 @@ describe('draft pipeline: quality validation, controlled regeneration, fallback'
   it('admin_notes from the model are preserved on an accepted draft', async () => {
     const t = await ticket({});
     provider.replyQueue.push(GOOD_ROYALTY);
-    const d = (await api.get(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
+    const d = (await api.post(`/api/v1/admin/tickets/${t.id}/draft`).set(as(admin))).body;
     assert.deepEqual(d.notes, ['Check bank details']);
   });
 });

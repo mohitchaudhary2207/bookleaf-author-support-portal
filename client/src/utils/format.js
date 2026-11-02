@@ -30,3 +30,12 @@ export function ageLabel(hours) {
 export const formatBytes = (n) => (n < 1024 ? `${n} B` : n < 1_048_576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1_048_576).toFixed(1)} MB`);
 
 export const firstName = (name = '') => name.replace(/\s*\(.*\)\s*$/, '').split(' ')[0];
+
+/** First-response SLA for the queue: overdue / due-in / done. Returns { tone, label }. */
+export function slaState(sla, firstResponseAt, status, now = Date.now()) {
+  if (['Resolved', 'Closed'].includes(status)) return { tone: 'done', label: 'Closed out' };
+  if (!sla.waitingForFirstResponse) return { tone: 'ok', label: firstResponseAt ? 'Replied' : '—' };
+  const hours = Math.round((new Date(sla.dueAt).getTime() - now) / 3_600_000);
+  if (sla.overdue) return { tone: 'overdue', label: `Overdue ${ageLabel(Math.abs(hours))}` };
+  return { tone: hours <= 4 ? 'soon' : 'ok', label: hours < 1 ? 'Due <1h' : `Due in ${ageLabel(hours)}` };
+}

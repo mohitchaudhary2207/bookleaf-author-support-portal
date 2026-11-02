@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Paperclip, Send, X } from 'lucide-react';
 import { api } from '../../api/client.js';
 import { useFetch } from '../../api/hooks.js';
-import { Card, Field, PageHeader, Spinner } from '../../components/Common.jsx';
+import { Alert, Card, Field, PageHeader, PageSkeleton } from '../../components/Common.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatBytes } from '../../utils/format.js';
 
@@ -67,18 +68,18 @@ export default function NewTicketPage() {
     } finally { setBusy(false); }
   };
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageSkeleton label="Loading…" />;
   const books = data?.items ?? [];
 
   return (
     <div className="page narrow">
-      <PageHeader title="Submit a support query" subtitle="Tell us what is going on - the more detail, the faster we can help." />
+      <PageHeader eyebrow="Support" title="Submit a support query" subtitle="Tell us what is going on - the more detail, the faster we can help." />
       <div className="two-col">
         <Card>
           <form onSubmit={submit} noValidate>
-            {formError && <div className="alert alert-error" role="alert">{formError}</div>}
+            {formError && <Alert kind="error">{formError}</Alert>}
 
-            <Field label="Which book is this about?" htmlFor="bookId" error={errors.bookId}>
+            <Field label="Which book is this about?" htmlFor="bookId" error={errors.bookId} hint="Choose General / Account Level for anything not tied to one book.">
               <select id="bookId" value={form.bookId} onChange={set('bookId')}>
                 <option value="general">General / Account Level</option>
                 {books.map((b) => <option key={b.bookId} value={b.bookId}>{b.title} ({b.isPublished ? 'Published' : b.productionStage ?? 'In production'})</option>)}
@@ -95,12 +96,13 @@ export default function NewTicketPage() {
             </Field>
 
             <Field label="Attachments (optional)" error={errors.attachments} hint={`Up to ${MAX_FILES} files · 5 MB each · PNG, JPG, WEBP, PDF or TXT. Photos help with print-quality issues.`}>
-              <input ref={fileInput} type="file" multiple accept={ACCEPT} onChange={(e) => addFiles([...e.target.files])} />
+              <input ref={fileInput} type="file" multiple accept={ACCEPT} onChange={(e) => addFiles([...e.target.files])} aria-label="Attachments" />
               {files.length > 0 && (
                 <ul className="attachments">
                   {files.map((f, i) => (
-                    <li key={`${f.name}-${i}`}>📎 {f.name} <span className="muted small">{formatBytes(f.size)}</span>
-                      <button type="button" className="link danger" onClick={() => setFiles(files.filter((_, j) => j !== i))}>Remove</button>
+                    <li key={`${f.name}-${i}`}>
+                      <Paperclip size={14} />{f.name} <span className="muted xs">{formatBytes(f.size)}</span>
+                      <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`}><X size={14} /></button>
                     </li>
                   ))}
                 </ul>
@@ -109,7 +111,7 @@ export default function NewTicketPage() {
 
             <div className="form-actions">
               <Link className="btn btn-ghost" to="/tickets">Cancel</Link>
-              <button className="btn btn-primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit query'}</button>
+              <button className="btn btn-primary" disabled={busy}>{busy ? <><span className="spinner sm" />Submitting…</> : <><Send size={16} />Submit query</>}</button>
             </div>
           </form>
         </Card>

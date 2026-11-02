@@ -1,0 +1,67 @@
+/* BookLeaf design tokens. Values marked (observed) were sampled from the supplied brand references;
+   the rest are documented recommendations - see docs/BOOKLEAF_DESIGN_SYSTEM.md. */
+
+@font-face { font-family: 'Lato'; font-weight: 400; font-style: normal; font-display: swap; src: url('../assets/fonts/lato-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-weight: 700; font-style: normal; font-display: swap; src: url('../assets/fonts/lato-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-weight: 900; font-style: normal; font-display: swap; src: url('../assets/fonts/lato-latin-900-normal.woff2') format('woff2'); }
+
+:root {
+  /* ---- brand ---- */
+  --brand-500: #f26a7a;   /* observed: logo / footer / button fill */
+  --brand-600: #d63a4e;   /* primary action; 4.59:1 with white text */
+  --brand-700: #b8283d;
+  --brand-100: #fbd2d7;   /* observed */
+  --brand-50: #fdeff1;    /* observed */
+
+  /* ---- neutrals ---- */
+  --ink-900: #3d2f2f;     /* observed */
+  --ink-700: #4f4444;
+  --ink-600: #5e5e5e;     /* observed */
+  --ink-500: #6b5d5d;
+  --ink-300: #b9aeae;
+  --bg: #fbf7f7;
+  --surface: #ffffff;
+  --surface-2: #fdf9f9;
+  --line: #f0e3e5;
+  --line-strong: #e6d3d6;
+
+  /* ---- functional ---- */
+  --ok: #1d7a4a;      --ok-bg: #e8f6ee;      --ok-line: #bfe3cf;
+  --warn: #9a5b00;    --warn-bg: #fff3dc;    --warn-line: #f0d9a4;
+  --danger: #b42318;  --danger-bg: #fdecea;  --danger-line: #f3c2bd;
+  --info: #2c5aa0;    --info-bg: #eaf1fb;    --info-line: #c6d8f2;
+  --ai-600: #5b4bc4;  --ai-50: #f3f1fd;      --ai-line: #dcd6f7;
+
+  /* ---- type ---- */
+  --font: 'Lato', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-display: clamp(2rem, 4vw, 2.6rem);
+  --fs-h1: 1.75rem;
+  --fs-h2: 1.0625rem;
+  --fs-body: 0.9375rem;
+  --fs-sm: 0.875rem;
+  --fs-xs: 0.78rem;
+
+  /* ---- shape ---- */
+  --r-pill: 999px;
+  --r-lg: 16px;
+  --r-md: 12px;
+  --r-sm: 8px;
+
+  /* ---- space (4px scale) ---- */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-7: 32px; --s-8: 48px;
+
+  /* ---- depth ---- */
+  --shadow-sm: 0 1px 2px rgba(61, 47, 47, .05), 0 4px 14px rgba(61, 47, 47, .05);
+  --shadow-md: 0 8px 28px rgba(61, 47, 47, .14);
+  --ring: 0 0 0 3px rgba(242, 106, 122, .35);
+
+  /* ---- motion ---- */
+  --t-fast: 120ms ease;
+  --t-med: 200ms ease;
+
+  /* ---- layout ---- */
+  --sidebar-w: 264px;
+  --sidebar-w-collapsed: 76px;
+  --appbar-h: 60px;
+}
