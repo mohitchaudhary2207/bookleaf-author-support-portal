@@ -15,7 +15,10 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "seed": "npm run seed -w server",
-    "test": "npm test -w server"
+    "test": "npm test -w server",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "validate:openapi": "npm run validate:openapi -w server",
+    "eval:ai": "npm run eval:ai -w server"
   },
   "devDependencies": {
     "concurrently": "^9.2.5"

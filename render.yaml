@@ -1,10 +1,16 @@
 # Render blueprint: one web service serves the API and the built React app.
+#
+# NOTE: this blueprint describes an ISOLATED EVALUATION deployment (demo data on). It is not a template for a
+# production system holding real author data - for that, remove the three SEED_* entries below.
 services:
   - type: web
     name: bookleaf-support-portal
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    # Render exposes NODE_ENV=production during the BUILD as well, and `npm ci` then skips devDependencies - which
+    # include vite and @vitejs/plugin-react, so `npm run build` would fail ("vite: not found"). --include=dev
+    # installs them for the build only; NODE_ENV=production still applies to the running server.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/v1/health
     envVars:
@@ -15,8 +21,23 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: OPENAI_API_KEY
-        sync: false          # set in the Render dashboard - never commit it
+        sync: false            # set in the Render dashboard - never commit it
       - key: AI_MODEL
         value: gpt-4o-mini
+
+      # --- demo data (evaluation deployment only) -------------------------------------------------
+      # The app never seeds known accounts in production unless SEED_DEMO_DATA=true is set explicitly, and then
+      # it requires both passwords below (there is no built-in fallback). Choose the passwords you publish in
+      # the README's "demo credentials" table.
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: SEED_AUTHOR_PASSWORD
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      # Build-time flag: "true" adds the click-to-fill demo-accounts panel to the login page (it embeds the demo
+      # passwords in the frontend bundle). Keep "false" unless you really want that panel.
+      - key: VITE_SHOW_DEMO
+        value: "false"
       # The free plan has an ephemeral disk: data re-seeds from the provided dataset on every restart.
       # To persist, add a disk mounted at /var/data and set DATABASE_PATH=/var/data/bookleaf.db and UPLOAD_DIR=/var/data/uploads

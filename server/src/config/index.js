@@ -41,8 +41,9 @@ export const config = {
   uploadDir: resolveFromRoot(env.UPLOAD_DIR, './storage/uploads'),
   seedDataPath: path.resolve(serverRoot, 'data/bookleaf_sample_data.json'),
   seed: {
-    authorPassword: env.SEED_AUTHOR_PASSWORD || 'Author@123',
-    adminPassword: env.SEED_ADMIN_PASSWORD || 'Admin@123',
+    // Dev/test fall back to the documented demo passwords; production has NO fallback (see db/seedPolicy.js).
+    authorPassword: env.SEED_AUTHOR_PASSWORD || (isProd ? '' : 'Author@123'),
+    adminPassword: env.SEED_ADMIN_PASSWORD || (isProd ? '' : 'Admin@123'),
   },
   auth: {
     jwtSecret,

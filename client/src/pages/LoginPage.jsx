@@ -1,23 +1,13 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Field } from '../components/Common.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-// Demo accounts for evaluators (seeded dataset). Hidden in a real deployment with VITE_SHOW_DEMO=false.
-const SHOW_DEMO = import.meta.env.VITE_SHOW_DEMO !== 'false';
-const DEMO_AUTHORS = [
-  ['Priya Sharma', 'priya.sharma@email.com', '2 books · pending royalty'],
-  ['Rohit Kapoor', 'rohit.kapoor@email.com', '2 books · top seller'],
-  ['Ananya Reddy', 'ananya.reddy@email.com', 'never paid yet'],
-  ['Vikram Joshi', 'vikram.joshi@email.com', 'poetry + self-help'],
-  ['Meera Nair', 'meera.nair@email.com', '2 books'],
-  ['Arjun Malhotra', 'arjun.malhotra@email.com', 'never paid yet'],
-  ['Sneha Kulkarni', 'sneha.kulkarni@email.com', '1 book in production'],
-  ['Farhan Sheikh', 'farhan.sheikh@email.com', 'fully paid'],
-  ['Kavita Deshmukh', 'kavita.deshmukh@email.com', 'in production + below payout threshold'],
-  ['Diya Chatterjee', 'diya.chatterjee@email.com', '2 books'],
-];
-const DEMO_ADMINS = [['Riya Mehta (Support Lead)', 'admin@bookleaf.com'], ['Aman Verma (Support)', 'support@bookleaf.com']];
+// Demo quick-fill is OPT-IN. In a production build it is on only when built with VITE_SHOW_DEMO=true (isolated
+// evaluation deployment). The vite dev server shows it unless VITE_SHOW_DEMO=false. The comparison is written inline
+// so the bundler can fold it to a constant and drop the lazily imported panel (and its demo passwords) when it is off.
+const SHOW_DEMO = import.meta.env.VITE_SHOW_DEMO === 'true' || (import.meta.env.DEV && import.meta.env.VITE_SHOW_DEMO !== 'false');
+const DemoAccounts = SHOW_DEMO ? lazy(() => import('../components/DemoAccounts.jsx')) : null;
 
 export default function LoginPage() {
   const { user, login, sessionExpired } = useAuth();
@@ -62,24 +52,7 @@ export default function LoginPage() {
           <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         </form>
 
-        {SHOW_DEMO && (
-          <details className="demo">
-            <summary>Demo accounts (click to fill)</summary>
-            <p className="muted small">All author passwords: <code>Author@123</code> · admin password: <code>Admin@123</code></p>
-            <h4>Support team</h4>
-            <div className="demo-list">
-              {DEMO_ADMINS.map(([name, email]) => (
-                <button type="button" key={email} className="demo-item" onClick={() => fill(email, 'Admin@123')}><strong>{name}</strong><span>{email}</span></button>
-              ))}
-            </div>
-            <h4>Authors</h4>
-            <div className="demo-list">
-              {DEMO_AUTHORS.map(([name, email, note]) => (
-                <button type="button" key={email} className="demo-item" onClick={() => fill(email, 'Author@123')}><strong>{name}</strong><span>{note}</span></button>
-              ))}
-            </div>
-          </details>
-        )}
+        {DemoAccounts && <Suspense fallback={null}><DemoAccounts onPick={fill} /></Suspense>}
       </div>
     </div>
   );

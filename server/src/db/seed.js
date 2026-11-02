@@ -16,13 +16,15 @@ const WIPE_ORDER = ['ai_usage', 'ai_drafts', 'ticket_activity', 'ticket_attachme
  * provided dataset. Idempotent: does nothing if users already exist, unless force=true
  * (which wipes everything first).
  */
-export function seedDatabase(db, { force = false, withDemoTickets = true } = {}) {
+export function seedDatabase(db, { force = false, withDemoTickets = true, authorPassword = config.seed.authorPassword, adminPassword = config.seed.adminPassword } = {}) {
+  // Defence in depth: never create accounts with an empty password, whatever the caller does.
+  if (!authorPassword || !adminPassword) throw new Error('seedDatabase requires explicit author and admin passwords');
   const existing = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
   if (existing > 0 && !force) return { seeded: false };
 
   const data = JSON.parse(fs.readFileSync(config.seedDataPath, 'utf8'));
-  const authorHash = bcrypt.hashSync(config.seed.authorPassword, 10);
-  const adminHash = bcrypt.hashSync(config.seed.adminPassword, 10);
+  const authorHash = bcrypt.hashSync(authorPassword, 10);
+  const adminHash = bcrypt.hashSync(adminPassword, 10);
 
   db.transaction(() => {
     if (force) for (const table of WIPE_ORDER) db.exec(`DELETE FROM ${table}`);
