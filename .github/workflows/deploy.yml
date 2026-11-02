@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" "sudo /opt/bookleaf/deploy/remote-deploy.sh /opt/bookleaf/incoming/bookleaf-release.tgz"
+            "$DEPLOY_USER@$DEPLOY_HOST" "sudo /opt/bookleaf/deploy/launch.sh /opt/bookleaf/incoming/bookleaf-release.tgz"
 
       - name: Public health check
         run: |

@@ -1,32 +1,24 @@
 #!/usr/bin/env bash
-# Runs ON THE SERVER as root (via sudo, by the restricted bookleaf-deploy user). Usage:
-#   sudo /opt/bookleaf/deploy/remote-deploy.sh /opt/bookleaf/incoming/bookleaf-release.tgz
-#
-# Order: validate -> back up live data -> unpack -> build image -> switch container -> health check -> roll back on failure.
+# Runs ON THE SERVER as root, started by the fixed launcher (deploy/launch.sh) from INSIDE the new release.
+# Arguments: <timestamp> <release directory>
+# Order: back up live data -> build image -> switch container -> health check -> roll back on failure.
 # It never writes the database or the uploads, never reseeds, and never touches the Jerry AI containers or nginx.
 set -euo pipefail
 
-TARBALL="${1:-}"
+STAMP="${1:?timestamp}"
+REL="${2:?release dir}"
 BL=/opt/bookleaf
 DOMAIN=bookleaf.206.189.178.199.nip.io
-STAMP=$(date +%Y%m%d%H%M%S)
-REL="$BL/releases/$STAMP"
 LOG=/var/log/bookleaf/deploy.log
 
 mkdir -p /var/log/bookleaf
 exec > >(tee -a "$LOG") 2>&1
 echo "=== deploy $STAMP ($(date -u +%FT%TZ))"
 
-# 1. Accept only a tarball from the incoming folder.
-case "$TARBALL" in
-  "$BL/incoming/"*.tgz) ;;
-  *) echo "refusing: $TARBALL is not in $BL/incoming"; exit 1 ;;
-esac
-[ -f "$TARBALL" ] || { echo "missing tarball"; exit 1; }
-
-# 2. Back up live data BEFORE anything changes. Abort if the backup cannot be made.
+# 1. Back up live data BEFORE anything changes. Abort if the backup cannot be made.
 BACKUP_DIR=/var/lib/bookleaf/data/backups
 mkdir -p "$BACKUP_DIR" /var/lib/bookleaf/backups
+chown 1000:1000 "$BACKUP_DIR"          # the container's 'node' user writes the backup
 docker exec bookleaf node -e "
   const D = require('better-sqlite3');
   const db = new D('/data/bookleaf.db');
@@ -37,14 +29,8 @@ docker exec bookleaf node -e "
 tar czf "/var/lib/bookleaf/backups/uploads-$STAMP.tgz" -C /var/lib/bookleaf uploads 2>/dev/null || true
 echo "backups: $BACKUP_DIR/bookleaf-$STAMP.db"
 
-# 3. Unpack the release next to the previous ones.
-mkdir -p "$REL"
-tar xzf "$TARBALL" -C "$REL"
-rm -f "$TARBALL"
+# 2. Keep the currently running image and release as the rollback target, then build the new one.
 PREVIOUS_REL=$(readlink -f "$BL/current" 2>/dev/null || true)
-chown -R root:root "$REL"
-
-# 4. Keep the currently running image as the rollback target, then build the new one.
 docker tag bookleaf:release bookleaf:previous 2>/dev/null || true
 ln -sfn "$REL" "$BL/current"
 cp "$REL/docker-compose.yml" "$BL/docker-compose.yml"

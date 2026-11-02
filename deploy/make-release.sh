@@ -16,6 +16,7 @@ cp -r server/data "$OUT/server/data"
 cp -r client/dist "$OUT/client/dist"
 cp deploy/Dockerfile.runtime "$OUT/Dockerfile"
 cp deploy/docker-compose.yml "$OUT/docker-compose.yml"
+mkdir -p "$OUT/deploy" && cp deploy/remote-deploy.sh "$OUT/deploy/remote-deploy.sh"
 
 # Safety net: refuse to package anything that looks like a secret or local data.
 if find "$OUT" \( -name '.env*' -o -name '*.db' -o -name '*.db-*' -o -name 'storage' -o -name 'uploads' \) | grep -q .; then
