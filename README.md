@@ -1,227 +1,597 @@
 # BookLeaf Author Support & Communication Portal
 
-A full-stack web app that lets BookLeaf authors raise support tickets and lets the operations team resolve them faster, with **AI-assisted triage and reply drafting** that degrades gracefully when the AI is unavailable. Built for BookLeaf Publishing's full-stack technical assignment.
+![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-better--sqlite3-003B57?logo=sqlite&logoColor=white)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI%20gpt--4o--mini-412991?logo=openai&logoColor=white)
+![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0.3-6BA539?logo=openapiinitiative&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
 
-- **Author portal** - email/password login, a *Dashboard* (books, royalties earned / paid / pending, active tickets), *My Books* (royalties, production progress), *Submit a query* (with optional attachments), *My Tickets* with live updates and replies.
-- **Admin console** - a live *Dashboard*, an urgency-sorted ticket queue with filters and SLA indicators, AI category + priority (overridable), AI-drafted replies grounded in the BookLeaf knowledge base **generated only when an admin clicks "Generate AI Response"**, internal notes, assignment, audit trail, SLA flags, AI usage/cost page.
-- **REST API** - versioned (`/api/v1`), role-based, validated, documented with OpenAPI 3.0.3 (Swagger UI at `/api/docs`).
+A full-stack support portal for BookLeaf Publishing. Authors raise tickets about royalties, ISBNs, printing, distribution and production status; the operations team works one urgency-sorted queue, with **AI-assisted triage** and **AI-drafted replies grounded in the BookLeaf knowledge base**. A human reviews and sends every reply, and the system keeps working when the AI provider is unavailable.
 
 | | |
 |---|---|
-| **Live demo** | **Deployment pending - no live URL yet.** A Render blueprint and a Dockerfile are included; see [Deploy](#deploy). |
-| **API docs** | `/api/docs` (Swagger UI) · `/api/openapi.json` · source: `server/src/docs/openapi.yaml` (OpenAPI 3.0.3) |
-| **Stack** | Node 22 · Express 5.3 · SQLite (better-sqlite3 13) · React 19.3 + React Router 7.18 + Vite 8.3 · Zod 4.6 · Server-Sent Events · OpenAI SDK 7.47 (`gpt-4o-mini`) |
+| **Live application** | **https://bookleaf.206.189.178.199.nip.io** (HTTPS, deployed automatically from `main`) |
+| **API documentation** | `/api/docs` (Swagger UI) on the live site, or locally at http://localhost:4000/api/docs |
+| **Source code** | https://github.com/mohitchaudhary2207/bookleaf-author-support-portal |
+| **Product walkthrough** | Provided with the submission as a video. It is not hosted in this repository. |
+| **Demo logins** | [Demo credentials](#demo-credentials) |
 
-## Demo credentials (isolated evaluation environment only)
+## Table of contents
 
-> **These credentials exist only for evaluating the seeded demo dataset** (the assignment asks for test logins). They are well-known, published passwords: never use them, or this seeding mode, for a system holding real author data. See [Demo data & production safety](#demo-data--production-safety).
+1. [Overview](#overview)
+2. [Key features](#key-features)
+3. [Demo credentials](#demo-credentials)
+4. [Product screenshots](#product-screenshots)
+5. [Technology stack](#technology-stack)
+6. [System architecture](#system-architecture)
+7. [Application workflows](#application-workflows)
+8. [AI integration](#ai-integration)
+9. [Database design](#database-design)
+10. [API documentation](#api-documentation)
+11. [Security](#security)
+12. [Project structure](#project-structure)
+13. [Local setup](#local-setup)
+14. [Testing and quality](#testing-and-quality)
+15. [Deployment and CI/CD](#deployment-and-cicd)
+16. [Design decisions and trade-offs](#design-decisions-and-trade-offs)
+17. [Known limitations and future improvements](#known-limitations-and-future-improvements)
+18. [Author](#author)
 
-When the demo dataset is seeded (always in local development; on a deployment only if explicitly enabled - see below), these accounts exist. The passwords below are the development defaults; an evaluation deployment uses whatever passwords were supplied through `SEED_AUTHOR_PASSWORD` / `SEED_ADMIN_PASSWORD`.
+---
 
-| Role | Email | Password (dev default) |
+## Overview
+
+**The problem.** A publishing house answers the same kinds of author questions all day: "where is my royalty?", "my ISBN is wrong", "my copies arrived damaged". Done through email, these get lost, are answered in the order they arrive rather than by urgency, and need a support person to look up the author's book and royalty numbers before replying.
+
+**Who uses it.**
+
+- **Authors** sign in, see their own books, royalties and production progress, raise a ticket, and follow the conversation as it updates.
+- **Support admins** work a single queue sorted by urgency, with the author's book data beside each ticket and a drafted reply ready on request.
+
+**How it works.** When an author submits a ticket it is saved immediately. The system then classifies it into one of six categories and assigns a priority (Critical, High, Medium or Low), by AI when available and by keyword rules otherwise. The queue sorts unresolved tickets by priority and age and flags those past their first-response target. An admin can press **Generate AI Response** to get a draft written from the relevant knowledge-base sections and from facts the application computed from the database. The admin edits it and sends it, and the author sees the reply appear without refreshing.
+
+**What makes it useful.**
+
+- The AI **reads and drafts; a human decides.** Nothing is sent to an author automatically.
+- Money and dates in a draft come from code, not from the model, and a quality gate checks them before the admin sees the draft.
+- An AI outage never blocks a ticket from being created or answered.
+- Opening a ticket never calls the model. AI cost is spent only when an admin asks for it.
+
+## Key features
+
+Only features that exist in the code are listed.
+
+### Author portal
+
+- **Authentication:** email and password sign-in. An author can only ever see their own data.
+- **Dashboard:** books, royalties earned, paid and pending, and active tickets.
+- **Book portfolio:** each book's status, sales, royalty figures, print partner and platforms. Unpublished books show a production-stage progress tracker.
+- **Ticket submission:** pick a book (or "general"), subject, description, and up to 3 attachments (PNG, JPG, WEBP, PDF or TXT, 5 MB each).
+- **Ticket tracking and conversation history:** a status for each ticket, a public message thread, replies (a reply to a resolved ticket reopens it), and closing a ticket.
+- **Real-time updates:** new replies and status changes arrive over Server-Sent Events, without refreshing.
+
+### Admin portal
+
+- **Dashboard:** live ticket counts by status, priority and category, overdue and unassigned tickets, and average first-response time.
+- **Ticket queue:** search plus filters for status, category, priority, assignee and date range. Sorted unresolved first, then by priority, then oldest first. Overdue tickets are flagged against per-priority first-response targets (Critical 4 h, High 24 h, Medium 48 h, Low 72 h).
+- **AI-assisted classification and priority:** a category and priority with a confidence score and one-line rationale. Both can be overridden, and an override is never overwritten by a late AI result.
+- **AI-generated response drafts:** produced on request from the **Knowledge Base** sections for the ticket's category plus computed facts. The admin edits the draft before sending.
+- **Ticket management:** change status, assign to yourself or another admin, and reply to the author.
+- **Internal notes:** staff-only, stored in a separate table from the public thread.
+- **Audit trail:** every status change, override, assignment, reply and draft event is recorded.
+- **AI and usage page:** AI availability, call counts, tokens and an estimated spend.
+
+## Demo credentials
+
+> **Assignment demonstration accounts.** These accounts exist only so the deployed BookLeaf assignment application can be evaluated, using the dataset supplied with the assignment. They are not real author or staff accounts and hold no real data.
+
+| Account | Email / Login ID | Password | Role |
+|---|---|---|---|
+| Riya Mehta (Support Lead) | `admin@bookleaf.com` | `GPuru3G540GxQkczhKtf` | Admin |
+| Aman Verma (Support) | `support@bookleaf.com` | `GPuru3G540GxQkczhKtf` | Admin |
+| Ananya Reddy | `ananya.reddy@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Arjun Malhotra | `arjun.malhotra@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Diya Chatterjee | `diya.chatterjee@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Farhan Sheikh | `farhan.sheikh@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Kavita Deshmukh | `kavita.deshmukh@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Meera Nair | `meera.nair@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Priya Sharma | `priya.sharma@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Rohit Kapoor | `rohit.kapoor@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Sneha Kulkarni | `sneha.kulkarni@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+| Vikram Joshi | `vikram.joshi@email.com` | `ldGDYiNvWljyiRI6OR6m` | Author |
+
+Sign in at https://bookleaf.206.189.178.199.nip.io. Authors see only their own books and tickets; admins see every ticket. The same email addresses are seeded in local development, with the development-only passwords listed under [Local setup](#local-setup).
+
+<details>
+<summary>Dataset edge cases worth trying</summary>
+
+- **Sneha Kulkarni**: *Midnight in Mysore* is in production (no MRP or sales; shows a progress tracker).
+- **Ananya Reddy, Arjun Malhotra, Kavita Deshmukh (*The Nagpur Notebooks*), Diya Chatterjee (*Howrah Nights*)**: published and earning, but nothing paid yet.
+- **Kavita Deshmukh**: *The Nagpur Notebooks* has ₹850 pending, below the ₹1,000 minimum payout (it rolls over); *Raising Roots* is in typesetting.
+- **Farhan Sheikh, Priya Sharma's *Saffron Diaries*** and others: fully paid, ₹0 pending.
+
+</details>
+
+## Product screenshots
+
+Screenshots are not stored in this repository. The product walkthrough video submitted with the assignment shows the author portal, the admin queue, and the explicit "Generate AI Response" flow. The live application can also be explored directly with the [demo accounts](#demo-credentials).
+
+## Technology stack
+
+| Layer | Technology | Purpose |
 |---|---|---|
-| Admin (support lead) | `admin@bookleaf.com` | `Admin@123` |
-| Admin | `support@bookleaf.com` | `Admin@123` |
-| Author (any of the 10) | `priya.sharma@email.com`, `rohit.kapoor@email.com`, `ananya.reddy@email.com`, `vikram.joshi@email.com`, `meera.nair@email.com`, `arjun.malhotra@email.com`, `sneha.kulkarni@email.com`, `farhan.sheikh@email.com`, `kavita.deshmukh@email.com`, `diya.chatterjee@email.com` | `Author@123` |
+| Frontend | React 19, React Router 7, Vite 8, `lucide-react` icons, plain CSS design system | Single-page app for both portals |
+| Backend | Node.js 22, Express 5 | REST API, business logic, static hosting of the built frontend |
+| Database | SQLite via `better-sqlite3` | Persistence (WAL-capable single file, transactional) |
+| AI | OpenAI `gpt-4o-mini` via the official SDK, strict function calling | Ticket classification, priority and reply drafting |
+| Validation | Zod 4 | Request validation on every input |
+| Authentication | `bcryptjs` password hashes, `jsonwebtoken` JWT in an httpOnly cookie (or `Bearer` header) | Sign-in and role-based access |
+| Real-time | Server-Sent Events (in-process event hub, browser `EventSource`) | Live ticket updates |
+| API docs | OpenAPI 3.0.3 + Swagger UI | Interactive documentation at `/api/docs` |
+| Security middleware | `helmet`, `express-rate-limit`, `multer` limits, `cors` allow-list | Headers and CSP, throttling, upload limits |
+| Testing | Node's built-in test runner, `supertest` | Server test suite |
+| Deployment | Docker container on a cloud VM behind an nginx reverse proxy, Let's Encrypt HTTPS | Production hosting |
+| CI/CD | GitHub Actions | Test, build, back up, deploy, health-check, roll back |
 
-Seeded data: the provided dataset (10 authors, 18 books) plus 5 demo tickets. The login page offers a click-to-fill "Demo accounts" panel only in local development, or in a build made with `VITE_SHOW_DEMO=true`; default production builds contain no demo credentials.
+## System architecture
 
-Edge cases from the dataset worth trying:
-- **Sneha Kulkarni** - *Midnight in Mysore* is in production (no MRP / sales; shows a progress stepper).
-- **Ananya Reddy, Arjun Malhotra, Kavita Deshmukh (*The Nagpur Notebooks*), Diya Chatterjee (*Howrah Nights*)** - published and earning, but nothing paid yet (royalty-paid ₹0).
-- **Kavita Deshmukh** - *The Nagpur Notebooks* has ₹850 pending, below the ₹1,000 minimum payout (rolls over); *Raising Roots* is in typesetting.
-- **Farhan Sheikh, Priya's *Saffron Diaries*** and others - fully paid, ₹0 pending.
+```mermaid
+flowchart LR
+  subgraph Browser["Browser"]
+    SPA["React SPA<br/>(AuthContext, LiveContext, pages)"]
+  end
 
-## Run locally
+  subgraph API["Express 5 API server (Node.js 22)"]
+    SEC["Security layer<br/>helmet CSP, request id,<br/>JSON body limit, CORS allow-list"]
+    AUTH["authenticate (JWT cookie or Bearer)<br/>originCheck (CSRF) / requireRole"]
+    ROUTES["Routes /api/v1<br/>auth, books, tickets, events, admin"]
+    VAL["validate (Zod schemas)"]
+    SVC["ticketService<br/>lifecycle + access rules"]
+    REPO["Repositories<br/>users, books, tickets, ai (SQL only)"]
+    HUB["Event hub (SSE)"]
+    AIS["aiService<br/>triage, draft, circuit breaker, metering"]
+    KB["Knowledge base + facts<br/>+ quality gate + fallback rules/templates"]
+    PROV["openaiProvider"]
+    STATIC["Static files<br/>client/dist"]
+    DOCS["Swagger UI<br/>/api/docs"]
+  end
 
-Requires Node 22.9+ (uses `--env-file-if-exists`).
+  DB[("SQLite database")]
+  FILES[("Attachment files<br/>local disk")]
+  OAI["OpenAI API<br/>gpt-4o-mini"]
 
-```bash
-npm install                      # installs server + client (npm workspaces)
-cp .env.example server/.env      # then edit: OPENAI_API_KEY (optional), JWT_SECRET
-npm run dev                      # API on :4000, web app on http://localhost:5173 (demo data seeded, demo panel on)
+  SPA -- "REST (cookie session)" --> SEC
+  SEC --> AUTH --> ROUTES --> VAL --> SVC
+  SVC --> REPO --> DB
+  SVC --> AIS --> KB
+  AIS --> PROV --> OAI
+  SVC --> HUB
+  HUB -. "SSE: ids only" .-> SPA
+  ROUTES --> FILES
+  SEC --> STATIC
+  SEC --> DOCS
 ```
 
-- Without `OPENAI_API_KEY` the app runs in **manual mode** (rule-based triage + template drafts) - everything still works.
-- Production-style run: `npm run build && npm start` serves the API **and** the built React app from one process on `$PORT` (set `NODE_ENV=production` and `JWT_SECRET`; see the demo-data rules below).
-- Reset local demo data: delete `server/storage/bookleaf.db`, or run `npm run seed -w server -- --force` (wipes and re-seeds; honours the seeding rules below).
+**Layering.** Routes parse and validate, then call a service. Ticket operations (list, create, reply, close, status and override changes, notes, drafts, attachment download) all go through `ticketService`, which owns the lifecycle rules and the access check. Repositories contain only SQL. A few read-only lookups (login, `me`, books, admin stats and lookups) call repositories directly, and contain no business rules.
+
+**Composition root.** `server/src/container.js` is the only place concrete dependencies are chosen. Tests inject an in-memory database and a fake AI provider through it.
+
+**Real-time events carry ids only.** The browser re-fetches through the normal REST API, so ticket authorization lives in one place.
+
+## Application workflows
+
+### Author ticket workflow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Author
+  participant Web as React app
+  participant API as Express API
+  participant AI as AI triage
+  participant DB as SQLite
+  actor Admin
+
+  Author->>Web: Sign in
+  Web->>API: POST /auth/login
+  API-->>Web: httpOnly session cookie
+  Author->>Web: Submit query (book, subject, description, attachments)
+  Web->>API: POST /tickets
+  API->>DB: Save ticket (status Open, triage pending)
+  API-->>Web: 201 Created (ticket exists even if AI is down)
+  API-)AI: Classify after responding (background)
+  AI-->>API: Category, priority, confidence (or keyword-rule fallback)
+  API->>DB: Store triage, record audit entry
+  API--)Admin: SSE ticket.created and ticket.triaged
+  Admin->>API: Open queue (sorted by priority, then age)
+  Admin->>API: Review ticket, optionally override category or priority
+  Admin->>API: POST /admin/tickets/:id/messages
+  API->>DB: Save reply, auto-assign, set status
+  API--)Web: SSE ticket.message (ids only)
+  Web->>API: GET /tickets/:id (re-fetch)
+  Web-->>Author: Reply appears without refresh
+  Admin->>API: Mark Resolved
+  Author->>API: Reply (reopens) or close the ticket
+```
+
+### AI-assisted admin workflow
+
+Opening a ticket **does not** generate a draft. Generation happens only when the admin asks for it.
+
+```mermaid
+flowchart TD
+  A["Admin opens a ticket"] --> B["GET /admin/tickets/:id/draft<br/>read-only, never calls the model"]
+  B --> C{"Saved draft exists?"}
+  C -- "No (204)" --> D["Empty state with<br/>Generate AI Response button"]
+  C -- "Yes" --> E["Show saved draft<br/>(flagged stale if the conversation changed)"]
+  D --> F["Admin clicks Generate AI Response"]
+  E --> G["Admin may click Regenerate"]
+  F --> H["POST /admin/tickets/:id/draft"]
+  G --> H
+  H --> I["Build context:<br/>knowledge-base sections for the category,<br/>facts computed from the database,<br/>last few messages"]
+  I --> J{"AI available?"}
+  J -- "Yes" --> K["LLM writes a draft"]
+  K --> L{"Quality gate passes?"}
+  L -- "No" --> M["One corrective regeneration"]
+  M --> N{"Passes now?"}
+  N -- "Yes" --> O["Save AI draft"]
+  N -- "No" --> P["Fallback to policy template<br/>with an explanatory note"]
+  L -- "Yes" --> O
+  J -- "No (outage, rate limit, no key)" --> P
+  O --> Q["Admin reviews and edits"]
+  P --> Q
+  Q --> R["Admin clicks Send"]
+  R --> S["POST /admin/tickets/:id/messages<br/>(marked ai_assisted)"]
+  S --> T["Author receives the reply"]
+```
+
+## AI integration
+
+All AI code is in `server/src/services/ai/`. The model never acts on the system: it returns structured text, and a human decides what happens next.
+
+**1. Classification and priority (one call).** `aiService.triage()` sends only the truncated ticket text and a one-line summary of the referenced book. It does not send the knowledge base or the thread. The model must answer through a forced, strict function call (`classify_ticket`) with an enum-constrained category and priority, a confidence value and a rationale shown to the admin. The prompt contains a priority rubric, and policy guardrails apply afterwards (for example, ISBN errors are never below High). Invalid output falls back to rules.
+
+**2. Knowledge-base-grounded drafts.** A draft is built from:
+
+- tone and voice rules in the system prompt (acknowledge first, be specific, own mistakes, give a timeline, end with a next step; printing complaints open with an apology);
+- only the knowledge-base sections relevant to the ticket's category, plus calibration examples (`knowledgeBase.js`);
+- **facts computed in code** from the database (`facts.js`, `royalty.js`): the book's numbers, the royalty cycle and payout deadline, the ₹1,000 minimum payout, overdue detection and production stage. The model does no date or money arithmetic;
+- the last few thread messages, each truncated.
+
+**3. Quality gate (`quality.js`).** Each draft is checked for greeting and sign-off, banned stock phrases, the printing apology, length, and grounding: every ₹ amount and date in the reply must appear in the supplied facts, knowledge base or ticket text. A failing draft is regenerated at most once, then replaced by a policy template.
+
+**4. Admin review.** Drafts are labelled as AI-generated, shown in a distinct accent colour, and editable. The admin presses **Send**. Replies sent from a draft are flagged `ai_assisted` in the database.
+
+**5. Fallbacks and error handling.**
+
+| Situation | Behaviour |
+|---|---|
+| AI down, rate-limited, out of quota, bad key, timeout or no key | The ticket is still created (AI runs after the response). Triage uses keyword rules and is flagged for review. The draft is a labelled policy template. The admin can always write by hand. |
+| Repeated failures | A **circuit breaker** pauses AI calls (4 consecutive failures, 60 s cool-down) while keeping the real failure cause visible to admins. |
+| Invalid or low-quality model output | Schema validation or the quality gate, then at most one regeneration, then a template. |
+| Late AI result after an admin override | Never overwrites a value whose source is `admin`. |
+
+**6. Cost and usage tracking.** Triage is one call. Drafts are generated only on request, saved, and de-duplicated if two admins click at once. Generation is limited to 12 per minute per admin. Every call is recorded in `ai_usage` (tokens in and out, cached tokens, latency, failures) and shown with an estimated cost on the admin **AI & usage** page. Prices come from environment variables.
+
+**7. Prompt-injection hardening (best effort).** Author text is fenced and escaped, and the system prompt treats it as data. The real safeguard is mandatory human review.
+
+## Database design
+
+SQLite, schema in [`server/src/db/schema.sql`](server/src/db/schema.sql) (applied on start-up).
+
+```mermaid
+erDiagram
+  AUTHORS |o--o| USERS : "login identity (admins have none)"
+  AUTHORS ||--o{ BOOKS : writes
+  AUTHORS ||--o{ TICKETS : raises
+  BOOKS   |o--o{ TICKETS : "concerns"
+  USERS   |o--o{ TICKETS : "assigned_to"
+  TICKETS ||--o{ TICKET_MESSAGES : "public thread"
+  TICKETS ||--o{ TICKET_NOTES : "internal notes"
+  TICKETS ||--o{ TICKET_ATTACHMENTS : has
+  TICKETS ||--o{ TICKET_ACTIVITY : "audit trail"
+  TICKETS ||--o| AI_DRAFTS : "cached draft"
+  TICKETS |o--o{ AI_USAGE : "metered calls"
+  USERS ||--o{ TICKET_MESSAGES : sends
+  USERS ||--o{ TICKET_NOTES : writes
+  USERS |o--o{ TICKET_ACTIVITY : "actor"
+
+  AUTHORS { text author_id PK }
+  USERS { int id PK
+          text email
+          text role "author or admin"
+          text author_id FK }
+  BOOKS { text book_id PK
+          text author_id FK
+          text status }
+  TICKETS { int id PK
+            text author_id FK
+            text book_id FK
+            text status
+            text category
+            text priority
+            text category_source "pending, ai, rules, admin"
+            int assigned_to FK }
+  TICKET_MESSAGES { int id PK
+                    int ticket_id FK
+                    text sender_role
+                    int ai_assisted }
+  TICKET_NOTES { int id PK
+                 int ticket_id FK
+                 int admin_id FK }
+  TICKET_ATTACHMENTS { int id PK
+                       int ticket_id FK
+                       text stored_name }
+  TICKET_ACTIVITY { int id PK
+                    int ticket_id FK
+                    text action }
+  AI_DRAFTS { int ticket_id PK
+              text source "ai or template"
+              text input_hash }
+  AI_USAGE { int id PK
+             int ticket_id FK
+             text purpose
+             int input_tokens
+             int output_tokens }
+```
+
+Notable design choices:
+
+- **Public messages and internal notes are separate tables**, so a faulty query cannot leak an internal note to an author.
+- **Triage fields record their source** (`pending`, `ai`, `rules` or `admin`), so overrides are auditable and a late AI result cannot overwrite an admin's choice.
+- **`ai_drafts`** holds one saved draft per ticket with an input hash, so a changed conversation can mark it stale without regenerating it.
+- **`ai_usage`** records every model call, successful or not.
+- Foreign keys are enforced (`PRAGMA foreign_keys = ON`), and ticket child rows are deleted with the ticket.
+
+## API documentation
+
+- **REST, versioned** under `/api/v1`; JSON in and out; role-based (`author` and `admin`).
+- **Specification:** OpenAPI 3.0.3 in [`server/src/docs/openapi.yaml`](server/src/docs/openapi.yaml) (24 paths, 27 operations). It is validated by `npm run validate:openapi` and by a test that compares it with the implemented routes.
+- **Interactive docs:** Swagger UI at `/api/docs`, raw JSON at `/api/openapi.json`.
+- **Authentication:** session cookie (web app) or `Authorization: Bearer <token>` (API clients).
+- **Validation:** Zod on every input. Errors always look like `{ "error": { "code", "message", "details?", "requestId" } }`, and validation failures return `422` with per-field `details`.
+
+| API group | Role | Purpose |
+|---|---|---|
+| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | public / any | Sign in, sign out, current user |
+| `GET /health`, `GET /meta` | public / any | Liveness and AI availability; enums used by the UI |
+| `GET /books`, `GET /books/:bookId` | author (own) / admin | Books with royalty summary |
+| `POST /tickets`, `GET /tickets`, `GET /tickets/:id` | author (own) | Submit (JSON or multipart), list, view |
+| `POST /tickets/:id/messages`, `POST /tickets/:id/close` | author (own) | Reply (reopens if resolved), close |
+| `GET /tickets/:id/attachments/:attachmentId` | owner / admin | Authenticated attachment download |
+| `GET /events` | any | Server-Sent Events stream |
+| `GET /admin/tickets`, `GET /admin/tickets/:id` | admin | Queue with filters, sort and pagination; ticket detail with notes and audit trail |
+| `PATCH /admin/tickets/:id` | admin | Status, category and priority overrides, assignment |
+| `POST /admin/tickets/:id/messages`, `POST /admin/tickets/:id/notes` | admin | Reply to the author; internal note |
+| `GET /admin/tickets/:id/draft` | admin | Read the saved AI draft (`204` if none); never calls the model |
+| `POST /admin/tickets/:id/draft` | admin | Generate or regenerate a draft (the explicit action) |
+| `POST /admin/tickets/:id/reclassify` | admin | Re-run AI triage |
+| `GET /admin/stats`, `/admin/ai/status`, `/admin/ai/usage`, `/admin/admins`, `/admin/authors` | admin | Dashboard, AI health and cost, lookups |
+
+Status codes used: `200/201/204`, `400` malformed JSON, `401` unauthenticated, `403` wrong role or CSRF, `404` not found (or not yours), `409` conflict (for example, replying on a closed ticket), `413` attachment too large, `422` validation, `429` rate limited.
+
+## Security
+
+### Implemented
+
+| Control | Detail |
+|---|---|
+| Password hashing | `bcryptjs`. Login compares against a dummy hash for unknown emails and returns one generic error for both cases. |
+| Authentication | JWT (12 h) in an **httpOnly, SameSite=Lax** cookie, `Secure` in production. `Bearer` tokens are also accepted for API clients. The user is re-read from the database on each request. |
+| Role-based authorization | `requireRole` guards admin routes. `ticketService.loadAccessible` guards every ticket operation, including attachment download. Other authors' resources return **404, not 403**. |
+| CSRF defence | Cookie-authenticated writes pass an `Origin` check against the host and the allow-list. |
+| Input validation | Zod schemas on every route. SQL is always parameterised, and search wildcards are escaped. |
+| Rate limiting | Login (30 per 15 minutes per IP) and AI draft generation (12 per minute per admin). |
+| Security headers | `helmet` with a strict Content-Security-Policy; `x-powered-by` disabled. |
+| Secrets | Read from the environment only. `JWT_SECRET` is mandatory in production (the server refuses to start without it). `OPENAI_API_KEY` stays on the server and `npm run check:bundle` fails a release if the frontend bundle contains a key-like string or demo credentials. |
+| File uploads | Maximum 3 files of 5 MB each. Type allow-list (PNG, JPG, WEBP, PDF, TXT) checked by MIME type and extension. Files are stored under random names and served only through an authenticated endpoint as downloads. |
+| Demo-data safety | In production, demo accounts are seeded only when explicitly enabled **and** passwords are supplied. There are no built-in production passwords. |
+| Dependencies | `npm audit --omit=dev` reported 0 vulnerabilities when this README was written. |
+
+### Not implemented (recommended)
+
+Server-side session revocation, multi-factor authentication for staff, content sniffing and virus scanning of uploads, and a secrets manager. See [Known limitations](#known-limitations-and-future-improvements).
+
+## Project structure
+
+```
+.
+├── client/                      React 19 + Vite single-page app
+│   ├── public/                  Favicon
+│   └── src/
+│       ├── api/                 Fetch client, data hooks, enum metadata
+│       ├── components/          Layout, badges, conversation view, brand logo, demo panel (opt-in)
+│       ├── context/             Auth, live (SSE) and toast providers
+│       ├── pages/
+│       │   ├── author/          Dashboard, books, tickets, new ticket, ticket detail
+│       │   └── admin/           Dashboard, queue, ticket detail with AI composer, AI and usage
+│       ├── styles/              Design tokens, base, components, shell and page styles
+│       └── assets/              Self-hosted Lato font and the BookLeaf logo
+├── server/
+│   ├── data/                    Provided sample dataset used for seeding
+│   ├── evals/                   Opt-in live AI evaluation harness
+│   ├── scripts/                 OpenAPI validator
+│   ├── src/
+│   │   ├── app.js               Express app: headers, routing, error handling
+│   │   ├── container.js         Composition root (dependency wiring)
+│   │   ├── index.js             Entry point: seeding policy, start-up, graceful shutdown
+│   │   ├── config/              Environment config and domain constants
+│   │   ├── db/                  schema.sql, seeding and seeding policy
+│   │   ├── docs/openapi.yaml    OpenAPI 3.0.3 specification
+│   │   ├── middleware/          Auth and RBAC, CSRF origin check, validation, uploads, errors
+│   │   ├── repositories/        SQL only: users, books, tickets, ai
+│   │   ├── routes/              HTTP layer: auth, books, tickets, events (SSE), admin
+│   │   ├── schemas/             Zod request schemas
+│   │   ├── services/            ticketService, royalty maths, SSE event hub
+│   │   │   └── ai/              aiService, OpenAI provider, prompts, knowledge base, facts, quality gate, fallbacks
+│   │   └── utils/               Errors, logger, dates, async handler
+│   └── tests/                   Test suite (Node test runner + supertest)
+├── scripts/                     check-bundle.mjs (release gate), ui-check.mjs (opt-in browser check)
+├── deploy/                      Release bundler, runtime Dockerfile, compose file, server-side deploy scripts
+├── .github/workflows/           deploy.yml: the CI/CD pipeline
+├── .env.example                 Environment template (no secrets)
+├── Dockerfile, render.yaml      Alternative hosting files (not used by the production deploy)
+└── package.json                 npm workspaces: server, client
+```
+
+## Local setup
+
+**Prerequisites:** Node.js **22.9 or newer** and npm. Optionally an OpenAI API key.
+
+```bash
+git clone https://github.com/mohitchaudhary2207/bookleaf-author-support-portal.git
+cd bookleaf-author-support-portal
+
+npm install                        # installs server and client (npm workspaces)
+cp .env.example server/.env        # then edit server/.env (see below)
+npm run dev                        # API on :4000, web app on http://localhost:5173
+```
+
+- **Database:** created and seeded automatically on first start in development (`server/storage/bookleaf.db`). The provided dataset (10 authors, 18 books) plus 5 demo tickets are loaded into an empty database. Reset with `npm run seed -w server -- --force`, or delete `server/storage/bookleaf.db`.
+- **Without `OPENAI_API_KEY`** the app runs in **manual mode** (rule-based triage and template drafts); everything else still works.
+- **Production-style run:** `npm run build && npm start` serves the API and the built React app from one process on `$PORT`. Set `NODE_ENV=production` and `JWT_SECRET` (see the seeding rules in `.env.example`).
+- **Local demo logins.** In development the seeded accounts use these documented development-only passwords: `Admin@123` for the two admin accounts and `Author@123` for the ten authors. They apply to local databases only and do not work on the deployed application.
+
+<details>
+<summary>Environment variables</summary>
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | LLM key. Server-side only, never sent to or bundled into the frontend. |
+| `AI_MODEL` | Default `gpt-4o-mini`. |
+| `AI_ENABLED` | `false` forces manual mode. |
+| `AI_PRICE_INPUT`, `AI_PRICE_OUTPUT`, `AI_PRICE_CACHE_READ` | USD per 1M tokens, used only for the cost estimate on the admin AI page. |
+| `JWT_SECRET` | **Required in production**; the server refuses to start without it. |
+| `PORT`, `NODE_ENV` | Server port (default 4000) and environment. |
+| `DATABASE_PATH`, `UPLOAD_DIR` | Storage locations (default `server/storage/...`). |
+| `CORS_ORIGINS` | Only needed if the frontend is hosted on a different origin. |
+| `SEED_DEMO_DATA` | Development: on unless `false`. Production: off unless exactly `true`. |
+| `SEED_AUTHOR_PASSWORD`, `SEED_ADMIN_PASSWORD` | Passwords for seeded accounts. Production has no fallback and requires both (minimum 8 characters) whenever `SEED_DEMO_DATA=true`. |
+| `VITE_SHOW_DEMO` | Build-time frontend flag. `true` adds a click-to-fill demo panel (embedding the demo passwords in the bundle). Default for production builds: off. |
+
+</details>
 
 ### Scripts
 
 | Command | What it does |
 |---|---|
-| `npm test` | Server test suite - 113 tests in 10 files; no network, API key or cost |
-| `npm run validate:openapi` | Strict OpenAPI 3.0.3 validation of the spec |
-| `npm run check:bundle` | Release gate: fails if `client/dist` contains secrets or demo credentials (`-- --allow-demo` for an opted-in demo build) |
-| `npm run eval:ai` | **Opt-in, live**: runs the brief's 7 sample queries through triage + draft against OpenAI (~15 calls, well under 1 US cent). `-- --offline` evaluates the fallback path with no API calls |
+| `npm run dev` | API and web app with hot reload |
+| `npm run build` | Production frontend build into `client/dist` |
+| `npm start` | Start the server (serves the built frontend if present) |
+| `npm test` | Server test suite (no network, API key or cost) |
+| `npm run validate:openapi` | Strict OpenAPI 3.0.3 validation |
+| `npm run check:bundle` | Release gate: fails if `client/dist` contains secrets or demo credentials |
+| `npm run eval:ai` | Opt-in live AI evaluation against OpenAI (about 15 calls). `-- --offline` evaluates the fallback path with no API calls. |
+| `npm run seed -w server` | Seed the dataset (honours the seeding policy) |
 
-### Environment variables
+## Testing and quality
 
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY` | LLM key. **Server-side only** - never sent to or bundled into the frontend. |
-| `AI_MODEL` | Default `gpt-4o-mini` (cheap, fast, ideal for classification + short drafts). |
-| `AI_ENABLED` | `false` forces manual mode. |
-| `AI_PRICE_INPUT/OUTPUT/CACHE_READ` | USD per 1M tokens, used only for the cost estimate on the admin AI page. |
-| `JWT_SECRET` | **Required in production** (the server refuses to start without it). |
-| `DATABASE_PATH`, `UPLOAD_DIR` | Storage locations (default `server/storage/...`). |
-| `SEED_DEMO_DATA` | Controls demo seeding. Development: on unless `false`. **Production: off unless exactly `true`.** |
-| `SEED_AUTHOR_PASSWORD`, `SEED_ADMIN_PASSWORD` | Passwords for seeded accounts. Development falls back to the demo defaults; **production has no fallback** and requires both (min. 8 chars) whenever `SEED_DEMO_DATA=true`. |
-| `VITE_SHOW_DEMO` | *Build-time* frontend flag. `true` adds the demo-accounts panel (embedding the demo passwords in the bundle). Default for production builds: off. |
-| `CORS_ORIGINS` | Only needed if the frontend is hosted on a different origin. |
+Results from the run made while preparing this README:
 
-### Demo data & production safety
-
-Seeding is decided by `server/src/db/seedPolicy.js`, applied at start-up and by `npm run seed`:
-
-| Environment | Seeds known demo accounts? |
-|---|---|
-| development / test | yes, into an empty database (unless `SEED_DEMO_DATA=false`) |
-| production, default | **no** - nobody can sign in until real data is loaded |
-| production, `SEED_DEMO_DATA=true` | yes, **only** with `SEED_AUTHOR_PASSWORD` and `SEED_ADMIN_PASSWORD` set; otherwise the server refuses to start |
-
-The dataset is only ever seeded into an *empty* database, never over existing data.
-
-### Deploy
-
-**Status: not deployed yet.** What is in place:
-
-- `render.yaml` - Render blueprint for a single web service (API + built frontend). The build command is `npm ci --include=dev && npm run build`: Render sets `NODE_ENV=production` during the build too, which would make a plain `npm ci` skip devDependencies (Vite) and fail - this was reproduced and fixed, and the new command was verified from a clean copy. The start command is `npm start`; the health check is `GET /api/v1/health`. The blueprint is written for an **isolated evaluation deployment** (it enables demo seeding, so you must provide both seed passwords in the dashboard); remove the three `SEED_*` entries for anything else.
-- `Dockerfile` - multi-stage build with the same dev-dependency rule. **Not yet built or run** (no Docker daemon was available during release work).
-- Set `JWT_SECRET` (generated by the blueprint) and `OPENAI_API_KEY` in the host's dashboard, never in the repository. On free hosts the disk is ephemeral, so data re-seeds on each restart; attach a disk and set `DATABASE_PATH` / `UPLOAD_DIR` to persist.
-- Before announcing a deployment, run `npm run check:bundle` against the production build.
-
-## User interface
-
-The UI follows the BookLeaf brand as evidenced by the supplied reference assets: the official logo (unmodified), brand coral, the Lato typeface (self-hosted, OFL), pill buttons and soft pink tints. One design system (`client/src/styles/`: tokens, base, components, shell, pages) serves both portals; every value is documented, and tagged *observed* or *recommendation*, in [docs/BOOKLEAF_DESIGN_SYSTEM.md](docs/BOOKLEAF_DESIGN_SYSTEM.md). A summary of what changed and what is still imperfect is in [docs/UI_REDESIGN_NOTES.md](docs/UI_REDESIGN_NOTES.md); screenshots are in [docs/screenshots/](docs/screenshots/).
-
-- **Layout:** collapsible left sidebar (desktop) that becomes a drawer on tablet/mobile; the ticket queue turns into labelled cards on phones; the production-stage tracker is a non-wrapping grid that switches to a vertical list in narrow cards.
-- **Icons:** Lucide (`lucide-react`), one family, no emoji.
-- **Accessibility:** AA-contrast text colours (the primary button uses a slightly deeper coral than the brand fill for that reason), visible focus rings, skip link, native `<dialog>` confirmations, and `prefers-reduced-motion` support.
-- **AI vs human:** AI-generated text is always labelled and shown in a distinct indigo accent; an admin must press **Send**.
-
-## Architecture
-
-```
-client/  React SPA (Vite)            server/src/
-  context/  auth, live (SSE), toasts   app.js            Express app: security headers, routing, error handler
-  api/      fetch client + hooks       container.js      composition root (the only place concrete deps are chosen)
-  pages/    author/  admin/            routes/           HTTP layer: parse -> validate -> call a service
-  components/ (DemoAccounts is         schemas/          zod request schemas (single source of validation truth)
-    opt-in, lazily loaded)             middleware/       auth + RBAC, CSRF origin check, validation, uploads, errors
-                                       services/         ticketService (lifecycle + access rules), events (SSE hub), royalty maths
-                                       services/ai/      aiService, openaiProvider, prompts, knowledgeBase, facts, quality,
-                                                         rules (fallback triage), templates (fallback drafts)
-                                       repositories/     SQL only (users, books, tickets, ai)
-                                       db/               schema.sql, seed, seedPolicy
-server/evals/   opt-in AI evaluation   server/tests/     test suite     scripts/   release gates
-```
-
-**Decisions and why**
-
-- **Layering: routes -> services -> repositories.** All *ticket* operations - list, create, reply, close, status/override changes, notes, drafts and attachment download - go through `ticketService`, which owns the lifecycle rules (reopen on author reply, auto-assign on first reply, override protection, audit log) and the access check. Repositories contain only SQL. Honest exception: a handful of **read-only lookup routes call repositories directly** without a service in between - login/`me` (`routes/auth.js`), the book list/detail (`routes/books.js`, scoped to the signed-in author in the handler), and the admin stats / AI usage / admins / authors lookups (`routes/admin.js`). They contain no business rules.
-- **Composition root.** `container.js` injects dependencies, so tests swap in an in-memory database and a fake LLM without mocking modules.
-- **SQLite.** Zero-ops and transactional; the schema is what matters: `authors`, `books`, `tickets`, `ticket_messages` (public) and `ticket_notes` (internal) are **separate tables** so a bad query can never leak an internal note to an author; plus `ticket_activity` (audit), `ai_drafts` (cache), `ai_usage` (metering). Triage fields carry a `*_source` (`ai | rules | admin`) so overrides are auditable and never clobbered by a slow AI call.
-- **Real time = Server-Sent Events.** Updates are one-way, ride plain HTTP (cookies, proxies), and `EventSource` auto-reconnects. Events carry **only ids**; clients re-fetch via the REST API, so ticket authorization stays in one place. The client resyncs after a reconnect. Authors only receive events for their own tickets (isolation across two simultaneous author streams is covered by a regression test); note/triage events are admin-only.
-- **Auth.** bcrypt-hashed passwords; JWT delivered as an **httpOnly, SameSite=Lax cookie** (`Secure` in production; also accepted as `Authorization: Bearer` for API clients). The user is re-read from the DB per request. Cookie-authenticated writes pass an **Origin check** (CSRF). Login is rate-limited and returns the same error for unknown email and wrong password. Other authors' resources return **404, not 403**, so ids can't be probed.
-- **Authorization.** `loadAccessible(user, id)` in `ticketService` guards every ticket operation, including attachment download. Book reads are scoped in the route handler; event delivery is scoped in `events.js`.
-- **Validation** with zod on every input; errors are `422 { error: { code, message, details:[{path,message}] } }` and the UI maps `details` onto form fields. SQL is always parameterised; search wildcards (`%`, `_`, `\`) are escaped.
-- **SLA / urgency.** The queue sorts unresolved-first, then priority (Critical>Low), then oldest-first. Each ticket has a first-response target by priority (Critical 4h, High 24h, Medium 48h, Low 72h) and is flagged **Overdue** when missed.
-
-## How the AI integration works
-
-**Model choice: OpenAI `gpt-4o-mini`.** The tasks are short and well-specified (classify a ticket, write ~100-150 words from supplied facts), so a small, fast, inexpensive model is the right fit: $0.15 / $0.60 per million input/output tokens, so triage + draft costs a small fraction of a cent (24 live calls measured $0.0042 on the app's own meter). It supports strict, schema-enforced function calling, which is what makes the output reliable. Swapping providers means implementing one method (`callTool`) in `services/ai/`.
-
-### 1. Triage - one call, category **and** priority
-`aiService.triage()` sends only the ticket subject/description (truncated) and a one-line summary of the referenced book - **not** the knowledge base and **not** the thread. The model must answer through a forced, **strict** function call (`classify_ticket`) with an enum-constrained category/priority, a confidence and a one-sentence rationale shown to the admin. The prompt contains a priority **rubric** (e.g. "no royalty for ~6 months on a live book" = Critical, ISBN errors = High, bio update = Low). **Policy guardrails** apply afterwards (ISBN errors are never below High). Output is validated with zod; anything invalid triggers the rule-based fallback.
-
-### 2. Draft - explicit, grounded, quality-checked, cached
-A draft is generated **only when an admin clicks "Generate AI Response"** (or "Regenerate") on the ticket - `POST /admin/tickets/:id/draft`. **Opening a ticket never calls the model**: the console makes a read-only `GET /admin/tickets/:id/draft` that returns the saved draft (flagged `stale` if the conversation changed since) or `204` when there is none, in which case the editor shows an empty state with the button. The draft is built from:
-- **Rules + tone** (system prompt): BookLeaf voice, "acknowledge first, be specific, own mistakes, give a timeline, end with a next step"; stock phrases are banned; Printing & Quality replies must open with a sincere apology.
-- **Only the knowledge-base sections relevant to the ticket's category** + that category's calibration examples (from the brief).
-- **FACTS computed in code** from the DB: the referenced book's real numbers, the royalty cycle (quarter end, 45-day payout deadline, next payout date), the ₹1,000 threshold, overdue detection, listing gaps, production stage. **The model never does date or money arithmetic**, and anything it can't verify goes into `admin_notes`.
-- **The last N thread messages**, each truncated (not the full history).
-
-**Quality gate (`services/ai/quality.js`).** Each draft is checked for the greeting and the exact sign-off, banned stock phrases ("I understand...", "I'm sorry to hear", "rest assured", ...), the printing apology, length, and **grounding**: every ₹ amount and `14 November 2026`-style date in the reply must appear in the facts, knowledge base or ticket text. A failing draft gets **at most one** corrective regeneration (one extra metered call); if it still fails, the policy **template** is returned with an explanatory note. An admin always reviews and edits the draft; **nothing is ever sent to an author automatically.** The same gate is applied to the template drafts in tests.
-
-### 3. Security
-- `OPENAI_API_KEY` is read from the environment in one place (`config/index.js` -> `container.js` -> `openaiProvider.js`) and is never sent to the browser; the release gate fails a build whose bundle contains a key-like string.
-- **Prompt-injection hardening (best effort):** author text is fenced in tags with `<`/`>` escaped, the system prompt states such content is data, not instructions, and the model has no tools that act on the system. The real protection is the human review of every draft; hardening was checked with an injection ticket during live testing.
-
-### 4. Error handling & graceful degradation
-| Failure | Behaviour |
-|---|---|
-| AI down / rate-limited / out of quota / bad key / timeout / no key | Ticket is **still created** (AI runs *after* the response). Triage falls back to **keyword rules** (tagged `Rules`, flagged for review). The draft falls back to a labelled **policy template**; the admin can always write manually. The endpoint still returns 200. |
-| Repeated failures | **Circuit breaker** (4 consecutive failures -> 60 s pause). While paused, the **real failure category is preserved** (auth, quota, rate limit, timeout, unavailable): the admin note and the AI page say e.g. "the provider rejected the API key (calls temporarily paused)" instead of a generic "unreachable". No credentials or raw provider text are ever shown. |
-| Invalid or low-quality model output | zod validation / quality gate -> one regeneration at most -> template. Neither trips the breaker. |
-| Provider recovers | The failure marker clears on the next success; a saved *template* draft is left as it is; the admin is told the AI is back and can click Regenerate. |
-| Late AI result after an admin override | Never overwrites a value whose `*_source = admin`. |
-
-### 5. Cost awareness
-- One call for category+priority (not two). Small input: truncated ticket + one-line book summary.
-- Drafts are **generated only on an explicit admin request**, **saved** (a read returns the saved draft and never calls the model; a changed conversation only marks it `stale`) and **de-duplicated** if two admins click Generate on the same ticket at once.
-- Static rules + policy sit in the system message and per-ticket content in the user message. OpenAI's automatic prompt caching was **observed for the longer draft prompts** (2,048 cached tokens across a 24-call run); the classification prompt (~800 tokens) is below OpenAI's 1,024-token caching minimum, so it is not expected to cache. Cached tokens are metered separately.
-- Draft generations are limited to 12/min per admin (`routes/admin.js`; the limiter is switched off under test, so this limit is not covered by automated tests).
-- **Every call is metered** (`ai_usage`: tokens in/out/cached, latency, failures) and shown with an estimated spend on the admin *AI & usage* page.
-
-## API
-
-Base path `/api/v1`. Spec: **OpenAPI 3.0.3** (`server/src/docs/openapi.yaml`, validated by `npm run validate:openapi` and by a test), Swagger UI at **`/api/docs`**, raw JSON at `/api/openapi.json`. Errors always look like `{ "error": { "code", "message", "details?", "requestId" } }`.
-
-| Method & path | Role | Purpose |
+| Check | Command | Result |
 |---|---|---|
-| `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | public / any | Sign in (sets cookie + returns token), sign out, current user |
-| `GET /health` · `GET /meta` | public / any | Liveness + AI availability · enums for the UI |
-| `GET /books` · `GET /books/:bookId` | author (own) / admin | Books + royalty summary |
-| `POST /tickets` | author | Submit query (JSON or multipart with attachments) |
-| `GET /tickets` · `GET /tickets/:id` | author (own) | My tickets / one ticket with public conversation |
-| `POST /tickets/:id/messages` · `POST /tickets/:id/close` | author (own) | Reply (reopens if Resolved) / close |
-| `GET /tickets/:id/attachments/:attachmentId` | owner / admin | Download attachment |
-| `GET /events` | any | SSE stream of ticket changes |
-| `GET /admin/tickets` | admin | Queue: filters `status,category,priority,assignee,q,from,to`, `sort`, pagination |
-| `GET /admin/tickets/:id` | admin | Conversation, internal notes, activity, author + books |
-| `PATCH /admin/tickets/:id` | admin | Status, category/priority override, assign (`"me"`, id, `null`) |
-| `POST /admin/tickets/:id/messages` | admin | Reply to the author (`setStatus: Resolved` optional) |
-| `POST /admin/tickets/:id/notes` | admin | Internal note |
-| `GET /admin/tickets/:id/draft` | admin | Read the saved AI draft (`204` if none) - **never** calls the model |
-| `POST /admin/tickets/:id/draft` | admin | Generate or regenerate a draft - the explicit "Generate AI Response" action |
-| `POST /admin/tickets/:id/reclassify` | admin | Re-run AI triage |
-| `GET /admin/stats` · `/admin/ai/status` · `/admin/ai/usage` · `/admin/admins` · `/admin/authors` | admin | Dashboard, AI health & cost, lookups |
+| Server test suite | `npm test` | **113 tests in 24 suites in 10 files, all passing** (about 42 s) |
+| OpenAPI | `npm run validate:openapi` | Valid OpenAPI 3.0.3: 24 paths, 27 operations, 23 schemas |
+| Frontend build | `npm run build` | Succeeds (JS bundle about 358 kB, 113 kB gzipped) |
+| Bundle gate | `npm run check:bundle` | No secrets or demo credentials in the built frontend |
+| Dependency audit | `npm audit --omit=dev` | 0 vulnerabilities |
 
-Status codes used: `200/201/204`, `400` malformed JSON, `401` unauthenticated, `403` wrong role / CSRF, `404` not found (or not yours), `409` conflict (reply on a closed ticket), `413` attachment too large, `422` validation, `429` rate limited.
+The suite uses Node's built-in runner and `supertest` with an in-memory SQLite database and a **fake AI provider**, so it needs no network or API key. It covers:
 
-## Testing
+- **API and security:** authentication, cookie and CSRF handling, the role matrix, isolation between authors (including between their SSE streams), validation, attachments, queue filtering and sorting, overrides and the ticket lifecycle.
+- **AI orchestration:** outage fallback, template drafts and recovery, draft caching and concurrency, invalid model output, the circuit breaker and failure-reason preservation, the quality gate, prompt-injection fencing and royalty-cycle maths.
+- **Explicit AI generation:** opening a ticket makes zero model calls; a click makes exactly one; saved drafts are reused and flagged stale; nothing is sent until the admin posts.
+- **OpenAI adapter:** the real SDK against a local mock of the API, checking request shape and error translation.
+- **Seeding and release safety:** the seeding policy, real production start-ups against temporary databases, and real frontend builds checked for secrets.
+- **OpenAPI:** the spec validates and matches the implemented routes.
 
-`npm test` - **113 tests in 10 files** (Node's built-in runner + supertest, in-memory SQLite, **fake LLM provider** - no network, API key or cost). What each layer proves:
+**Live AI quality.** The opt-in `npm run eval:ai` run at release classified all 7 sample queries from the brief into the expected category and produced quality-gate-compliant drafts for 7 of 7. **6 of 7 samples passed their content checks.** The "my royalty seems too low" sample did not reliably explain the net-profit deductions, so it is the first prompt to improve. The check was deliberately not loosened.
 
-- **API / security:** auth, cookie + CSRF, RBAC matrix, other-author isolation, validation, attachments, queue filter/sort/search (including literal `%`/`_`), overrides, lifecycle (reopen/close, no admin replies on closed tickets), cross-author SSE isolation.
-- **AI orchestration (fake provider):** outage -> ticket still created + rule triage; template draft then recovery; draft caching and concurrency de-duplication; invalid model output; ISBN policy floor; circuit breaker, **failure-reason preservation** for auth/quota/rate-limit/timeout; quality gate (banned phrases, printing apology, signature, invented amounts/dates), single regeneration and template fallback; prompt-injection fencing; royalty-cycle maths. These show the *orchestration* works - they say nothing about real model quality.
-- **Provider adapter:** runs the real OpenAI SDK against a **local mock** of the Chat Completions API to verify the request shape (forced strict function call, token cap) and error translation (429 rate-limit, 429 `insufficient_quota`, 5xx, 401, refusal, truncated JSON, connection refused). The SDK-timeout branch is not exercised.
-- **Seeding & release safety:** seeding policy as a pure function, and real production start-ups in child processes against temp databases (default = no seeding; explicit opt-in requires passwords); real Vite builds with `VITE_SHOW_DEMO` unset/false/true checked for demo credentials and secrets.
-- **OpenAPI:** the spec validates under strict OpenAPI 3.0.3, matches the implemented routes exactly, and documents auth/error responses consistently.
-- **Explicit AI generation:** opening a ticket (create, detail, repeated reads) makes zero draft calls and writes nothing; `GET /draft` returns `204` / the saved draft; one click = exactly one generation; saved drafts are shown without regeneration and flagged `stale` when the conversation changes; nothing is sent until the admin posts a message; AI failure returns a labelled template (200); closed tickets and authors are refused.
-- **Eval harness:** the opt-in evaluation's seven samples and checks, run offline (fallback path).
+**Not covered by the automated suite:** live OpenAI behaviour, the browser UI (checked with the opt-in `scripts/ui-check.mjs`, which needs `playwright-core`), SDK timeouts, and the login and draft rate limiters (disabled under test).
 
-**Live AI evaluation result at release (`npm run eval:ai`, `gpt-4o-mini`, 14-15 calls per run, about $0.003 each):** the model classified all 7 sample queries into the expected category with a plausible priority and produced quality-gate-compliant drafts for 7/7 (ISBN, printing - now opening with a sincere apology, availability, production and general answers all met their content checks). **6/7 samples passed overall: the *royalty "too low"* sample still fails** its content check in every run - the reply corrects the author's copy count and quotes the right figures but does not reliably explain the net-profit deductions (printing, commission, shipping) or offer the breakdown, and replies for that sample vary between runs on this small model. The check was deliberately not loosened. This is the first thing to improve (see Known limitations).
+## Deployment and CI/CD
 
-Not covered by the automated suite: the **live OpenAI** behaviour (verified manually and via the opt-in `npm run eval:ai`), the **browser UI** (checked with the opt-in `scripts/ui-check.mjs`, which drives a real browser against an isolated server and needs `playwright-core` installed separately; it is deliberately not part of `npm test`), SDK timeouts, and the login/regeneration rate limiters (disabled under test; the login limiter was verified manually).
+Production runs the application as a **Docker container** on a cloud VM. An nginx reverse proxy in front of it terminates HTTPS with a Let's Encrypt certificate. The container publishes no port of its own, and its database and uploads live in volumes outside the code.
 
-## Assumptions
+```mermaid
+flowchart LR
+  DEV["Push to main"] --> T["Test job<br/>npm ci, tests, OpenAPI validation,<br/>production build, bundle gate"]
+  T --> R["Build release bundle<br/>(runtime files only)"]
+  R --> U["Upload over SSH<br/>(restricted deploy account, pinned host key)"]
+  U --> B["On the server:<br/>back up database and uploads"]
+  B --> I["Build new image,<br/>replace the container"]
+  I --> H{"Health check<br/>passes?"}
+  H -- "Yes" --> P["Public HTTPS health check<br/>from the runner"]
+  H -- "No" --> RB["Automatic rollback to<br/>the previous image"]
+```
 
-- "Quarterly" = **calendar quarters** (ends 31 Mar / 30 Jun / 30 Sep / 31 Dec); payout due 45 days after. Computed in `services/royalty.js`.
-- The dataset stores a **flat royalty per copy**, while the knowledge base describes 80% of net profit. The app shows the dataset's numbers as the source of truth and the AI explains the 80/20 policy but is told not to recompute amounts.
-- Bank-detail status and production-stage start dates are **not in the data**, so the AI is told not to claim them and instead asks the admin to verify (`admin_notes`).
-- ISBNs in the dataset are placeholders (`978-93-5XXXX-..`), so they are displayed, not validated.
-- Authors are provisioned from the dataset; there is no self-signup/password reset (out of scope for the brief).
+The pipeline is defined in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). Every push to `main` (and manual runs) goes through the same steps, and a failure stops the rest:
 
-## Known limitations
+1. **Test:** `npm test`, `npm run validate:openapi`, `npm run build`, `npm run check:bundle`.
+2. **Build the release:** [`deploy/make-release.sh`](deploy/make-release.sh) packages only runtime files (server source, sample dataset, built frontend, runtime Dockerfile). It refuses to include `.env` files, databases or uploads.
+3. **Upload** over SSH through a restricted deploy account, with the server's host key pinned.
+4. **Deploy on the server** ([`deploy/launch.sh`](deploy/launch.sh) then [`deploy/remote-deploy.sh`](deploy/remote-deploy.sh)): back up the SQLite database and uploads, build the new image, replace the container, and health-check it. A failed check restores the previous image and release automatically.
+5. **Public health check** against the live HTTPS URL.
 
-- **Single instance:** the SSE hub is in-memory (multiple instances would need Redis pub/sub) and SQLite is a single-writer file database.
-- **Attachments** are stored on local disk (type/size limited, served as downloads only; content is not sniffed) and can only be added when a ticket is created, not on replies.
-- **Sessions:** logout clears the cookie but there is no server-side token revocation (12 h lifetime); the login response also returns the JWT in its body.
-- Cookie-authenticated requests that carry **no `Origin` header** are accepted (mitigated by `SameSite=Lax`); ticket creation is **not idempotent** (a double submit creates two tickets).
-- AI: the live behaviour under provider rate limits, quota exhaustion and timeouts is verified only against mocks; live drafts are quality-gated but not guaranteed perfect - hence the mandatory human review.
-- **AI answer quality:** the live evaluation passes 6/7 samples; the *royalty "too low"* explanation is inconsistent (see Testing). Mitigated by the quality gate and mandatory human review, not eliminated.
-- The **Dockerfile has not been built** and the Render blueprint has not been deployed.
-- One unexplained V8 `Fatal process out of memory: Zone` crash was observed once during heavy local browser testing and could not be reproduced; the cause is unknown.
-- **Next steps:** PostgreSQL + migrations, Redis for SSE/rate limits, object storage + AV scanning, server-side session revocation and MFA for staff, a growing AI eval set from real tickets, notifications to authors, accessibility audit.
+Only one production deploy runs at a time, and a running deploy is never cancelled part-way. **Pushes never change production data:** the local database is not copied, demo data is not re-seeded, and the data volumes are untouched. The app applies its own schema on start-up.
+
+<details>
+<summary>Making a change, rollback, backups and one-time setup</summary>
+
+**Making a change**
+
+```bash
+npm test && npm run validate:openapi && npm run build && npm run check:bundle   # the same checks CI runs
+git add -A && git commit -m "describe the change" && git push origin main
+gh run watch                                                                      # optional: follow the deploy
+```
+
+**Rollback.** Automatic on a failed health check (data is not rolled back). If a release changed the database schema, restore the database from the pre-deploy backup instead.
+
+**Backups.** Every deploy writes a database backup (SQLite online backup, readable by root only because it contains password hashes) and an uploads archive before changing anything. The 10 newest database backups and 5 newest releases are kept. **Backups are on the same server only**; copies to another location are not configured yet.
+
+**GitHub repository secrets** (names only): `BOOKLEAF_SSH_KEY` (deploy key, CI only), `BOOKLEAF_HOST`, `BOOKLEAF_USER` (a restricted account, not root) and `BOOKLEAF_KNOWN_HOSTS` (the pinned host-key line).
+
+**Server environment.** Production values (`JWT_SECRET`, `CORS_ORIGINS`, `OPENAI_API_KEY`, `AI_MODEL`, `SEED_*`) live in a root-readable environment file on the server and are never committed.
+
+**Logs.** Run history with `gh run list` and `gh run view <id> --log`; container logs with `docker logs bookleaf`.
+
+`render.yaml` and the root `Dockerfile` are kept for other hosts. The production path uses `deploy/Dockerfile.runtime` and `deploy/docker-compose.yml`.
+
+</details>
+
+## Design decisions and trade-offs
+
+- **Layered backend (routes, services, repositories) with a composition root.** Business rules and access checks live in one place, SQL lives in another, and tests swap dependencies without mocking modules.
+- **SQLite.** Zero operational overhead, transactional, and enough for this scope. The trade-off is a single writer on a single instance, which is documented below.
+- **Server-Sent Events for real time.** Updates only flow server to browser, SSE rides on plain HTTP (cookies, proxies) and `EventSource` reconnects by itself. Events carry only ids, and the client resyncs after a reconnect. The trade-off is an in-memory hub, so several instances would need a shared pub/sub such as Redis.
+- **AI generation is explicit.** The brief suggests presenting a draft when an admin opens a ticket. This implementation generates it only when the admin clicks **Generate AI Response**, and shows a saved draft immediately if one exists. This saves tokens and keeps the admin in control, at the cost of a few seconds' wait after the click.
+- **The model reads, code calculates, a human decides.** Amounts and dates are computed by the application, checked by a quality gate, and reviewed by an admin before anything is sent.
+- **Reliability over cleverness.** AI runs after the ticket is saved; failures degrade to rules and templates; a circuit breaker limits repeated failing calls; and a late AI result never overwrites an admin override.
+- **A small model with structure around it.** `gpt-4o-mini` is cheap and fast and supports strict function calling. Quality is protected by structure (facts, quality gate, review) rather than model size, and that has limits, noted in [Testing and quality](#testing-and-quality).
+
+**Assumptions.** "Quarterly" means calendar quarters, with payout due 45 days after quarter end. The dataset stores a flat royalty per copy while the knowledge base describes 80% of net profit, so the app shows the dataset's numbers and the AI explains the policy without recomputing amounts. ISBNs in the dataset are placeholders, so they are displayed but not validated. Authors are provisioned from the dataset; self-signup and password reset were out of scope.
+
+## Known limitations and future improvements
+
+**Known limitations**
+
+- **Single instance:** the SSE hub is in-memory and SQLite is a single-writer file database.
+- **Attachments** are on local disk, are not content-sniffed, and can only be added when a ticket is created, not on replies.
+- **Sessions:** logout clears the cookie, but there is no server-side token revocation (12 h lifetime).
+- Cookie-authenticated requests with no `Origin` header are accepted (mitigated by `SameSite=Lax`). Ticket creation is not idempotent, so a double submit creates two tickets.
+- **AI answer quality:** live behaviour under provider rate limits, quota exhaustion and timeouts was verified only against mocks, and one live sample (royalty explanation) is inconsistent.
+- **Backups** are on the same server, and rollback has not been exercised against a real failed deployment.
+- The root `Dockerfile` has not been built, and the Render blueprint has not been deployed.
+
+**Realistic next steps** (none of these exist today): PostgreSQL with migrations and off-server backups; Redis for SSE fan-out and shared rate limits; object storage with upload scanning; a job queue for AI work and notifications; observability and alerting; server-side session revocation and MFA for staff; a growing AI evaluation set from real tickets; author notifications; an accessibility audit.
+
+## Author
+
+**Developed by Mohit Chaudhary.**
+
+This project was developed as a Full-Stack Developer technical assignment for BookLeaf Publishing.

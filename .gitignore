@@ -1,12 +1,22 @@
 # dependencies / build output
 node_modules/
 client/dist/
+dist/
 coverage/
 
 # secrets and local configuration (the template .env.example IS tracked)
 .env
 .env.*
 !.env.example
+creds.txt
+creds*.txt
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa*
+id_ed25519*
 
 # runtime data: SQLite databases, uploads, logs
 server/storage/
@@ -17,27 +27,15 @@ server/storage/
 uploads/
 *.log
 
-# editor / OS noise and local backups
+# editor / OS noise, temporary files and local backups
 .DS_Store
 Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.tmp
 backups/
-
-# internal working documents - kept locally, deliberately not published
-/AUDIT_REPORT.md
-/REQUIREMENTS_TRACEABILITY.md
-/TEST_RESULTS.md
-/IMPROVEMENT_BACKLOG.md
-/README_AUDIT_NOTES.md
-/DAY1_RELEASE_REPORT.md
-# original assignment brief (confidential to the hiring company); the dataset is kept at server/data/
-/FULLSTACK-*
-brand-reffrences/
 
 # infrastructure notes for another project - never commit
 MASTER_INFRASTRUCTURE.md
-
-# plain-text production credentials - never commit
-creds.txt
-
-# CI release output
-dist/
