@@ -1,0 +1,22 @@
+# Render blueprint: one web service serves the API and the built React app.
+services:
+  - type: web
+    name: bookleaf-support-portal
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.15.0
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false          # set in the Render dashboard - never commit it
+      - key: AI_MODEL
+        value: gpt-4o-mini
+      # The free plan has an ephemeral disk: data re-seeds from the provided dataset on every restart.
+      # To persist, add a disk mounted at /var/data and set DATABASE_PATH=/var/data/bookleaf.db and UPLOAD_DIR=/var/data/uploads
