@@ -26,6 +26,7 @@ docker exec bookleaf node -e "
     .catch((e) => { console.error('db backup FAILED', e.message); process.exit(1); });
 "
 [ -s "$BACKUP_DIR/bookleaf-$STAMP.db" ] || { echo "database backup missing - aborting, nothing changed"; exit 1; }
+chown root:root "$BACKUP_DIR/bookleaf-$STAMP.db" && chmod 600 "$BACKUP_DIR/bookleaf-$STAMP.db"   # backups hold password hashes: root only
 tar czf "/var/lib/bookleaf/backups/uploads-$STAMP.tgz" -C /var/lib/bookleaf uploads 2>/dev/null || true
 echo "backups: $BACKUP_DIR/bookleaf-$STAMP.db"
 
