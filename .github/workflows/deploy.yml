@@ -1,0 +1,94 @@
+name: test-and-deploy
+
+# Every push to main: run all checks, then deploy the tested code to production.
+# Production DATA is never copied from CI or from a developer machine: the deploy only replaces the code and the image.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One production deploy at a time. A deploy that is already running is never cancelled half-way.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Tests and checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Server test suite
+        run: npm test
+      - name: OpenAPI validation
+        run: npm run validate:openapi
+      - name: Production frontend build
+        run: npm run build
+      - name: Bundle security check (no secrets or demo credentials)
+        run: npm run check:bundle
+
+  deploy:
+    name: Deploy to production
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.BOOKLEAF_HOST }}
+      DEPLOY_USER: ${{ secrets.BOOKLEAF_USER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the runtime release bundle
+        run: bash deploy/make-release.sh
+
+      - name: Prepare SSH (host key pinned, key kept out of logs)
+        env:
+          DEPLOY_KEY: ${{ secrets.BOOKLEAF_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BOOKLEAF_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DEPLOY_HOST"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload release
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            dist/bookleaf-release.tgz "$DEPLOY_USER@$DEPLOY_HOST:/opt/bookleaf/incoming/bookleaf-release.tgz"
+
+      - name: Deploy on the server (backup first, roll back automatically on failure)
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "sudo /opt/bookleaf/deploy/remote-deploy.sh /opt/bookleaf/incoming/bookleaf-release.tgz"
+
+      - name: Public health check
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 10 https://bookleaf.206.189.178.199.nip.io/api/v1/health | grep -q '"status":"ok"'; then
+              echo "public health OK"; exit 0
+            fi
+            sleep 6
+          done
+          echo "public health check failed"; exit 1
+
+      - name: Clean up key material
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

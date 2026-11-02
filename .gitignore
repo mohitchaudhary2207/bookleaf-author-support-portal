@@ -32,3 +32,12 @@ backups/
 # original assignment brief (confidential to the hiring company); the dataset is kept at server/data/
 /FULLSTACK-*
 brand-reffrences/
+
+# infrastructure notes for another project - never commit
+MASTER_INFRASTRUCTURE.md
+
+# plain-text production credentials - never commit
+creds.txt
+
+# CI release output
+dist/

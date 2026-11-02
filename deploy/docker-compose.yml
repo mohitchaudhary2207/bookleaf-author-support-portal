@@ -1,0 +1,29 @@
+# Production compose file for BookLeaf on the shared droplet. Copied to /opt/bookleaf by the deploy script.
+# The container joins the existing Jerry AI network so the nginx container can reach it by name.
+# It publishes NO host port: all public traffic goes through nginx over HTTPS.
+name: bookleaf
+services:
+  bookleaf:
+    build:
+      context: ./current
+    image: bookleaf:release
+    container_name: bookleaf
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      DATABASE_PATH: /data/bookleaf.db
+      UPLOAD_DIR: /uploads
+    volumes:
+      - /var/lib/bookleaf/data:/data
+      - /var/lib/bookleaf/uploads:/uploads
+    expose:
+      - "4000"
+    networks: [edge]
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+networks:
+  edge:
+    external: true
+    name: jerry-ai_default
