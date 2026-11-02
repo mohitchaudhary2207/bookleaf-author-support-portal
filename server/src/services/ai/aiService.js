@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { CATEGORIES, PRIORITIES, PRIORITY_RANK } from '../../config/constants.js';
 import { AIError } from './aiError.js';
 import { buildFacts, bookOneLiner } from './facts.js';
+import { knowledgeFor } from './knowledgeBase.js';
+import { checkDraftQuality, revisionFeedback } from './quality.js';
 import { buildClassifyUser, buildDraftSystem, buildDraftUser, CLASSIFY_SYSTEM, CLASSIFY_TOOL, DRAFT_TOOL } from './prompts.js';
 import { ruleBasedTriage } from './rules.js';
 import { buildTemplateDraft } from './templates.js';
@@ -41,18 +43,22 @@ export function applyPolicyFloor({ category, priority }, text = '') {
  * ticket creation and the admin workflow keep working when the provider is down.
  */
 export function createAIService({ provider, settings, onUsage = () => {}, logger, now = () => Date.now() }) {
-  const breaker = { failures: 0, openUntil: 0 };
+  // lastFailure keeps the category of the most recent provider failure (cleared by the next success), so while the
+  // breaker is open the admin still sees WHY (auth, quota, rate limit...) instead of a generic "unreachable".
+  const breaker = { failures: 0, openUntil: 0, lastFailure: null };
 
   const status = () => {
-    if (!settings.enabled) return { available: false, reason: 'disabled' };
-    if (!provider) return { available: false, reason: 'not_configured' };
-    if (breaker.openUntil > now()) return { available: false, reason: 'cooling_down' };
-    return { available: true, reason: null };
+    const lastFailure = breaker.lastFailure ? { reason: breaker.lastFailure.reason, at: new Date(breaker.lastFailure.at).toISOString() } : null;
+    if (!settings.enabled) return { available: false, reason: 'disabled', lastFailure: null };
+    if (!provider) return { available: false, reason: 'not_configured', lastFailure: null };
+    if (breaker.openUntil > now()) return { available: false, reason: 'cooling_down', lastFailure };
+    return { available: true, reason: null, lastFailure };
   };
 
   const recordFailure = (err) => {
     // Only infrastructure problems should trip the breaker, not one malformed answer.
     if (!['invalid_response', 'refused'].includes(err.reason)) {
+      breaker.lastFailure = { reason: err.reason, at: now() };
       breaker.failures += 1;
       if (breaker.failures >= settings.breakerThreshold) {
         breaker.openUntil = now() + settings.breakerCooldownMs;
@@ -64,12 +70,17 @@ export function createAIService({ provider, settings, onUsage = () => {}, logger
 
   /** Run one provider call with metering. Throws AIError. */
   async function call({ purpose, ticketId, system, user, tool, maxTokens }) {
-    const { available, reason } = status();
-    if (!available) throw new AIError(reason === 'cooling_down' ? 'unavailable' : 'disabled', `AI unavailable (${reason})`);
+    const { available, reason, lastFailure } = status();
+    if (!available) {
+      // Breaker open: not attempted. Re-raise the ORIGINAL failure category (never the provider's raw message/credentials).
+      if (reason === 'cooling_down') throw new AIError(lastFailure?.reason ?? 'unavailable', `AI calls are paused after repeated failures (last error: ${lastFailure?.reason ?? 'unknown'})`, { paused: true });
+      throw new AIError('disabled', `AI unavailable (${reason})`);
+    }
     const started = now();
     try {
       const result = await provider.callTool({ system, user, tool, maxTokens });
       breaker.failures = 0;
+      breaker.lastFailure = null;
       onUsage({ ticketId, purpose, model: result.model, ...result.usage, latencyMs: now() - started, ok: true });
       return result;
     } catch (err) {
@@ -88,7 +99,7 @@ export function createAIService({ provider, settings, onUsage = () => {}, logger
      * one-line book summary - never the thread history or the knowledge base.
      */
     async triage({ ticketId, subject, description, book }) {
-      const fallback = (reason) => ({ ...ruleBasedTriage({ subject, description }), degraded: true, reason });
+      const fallback = (reason, paused = false) => ({ ...ruleBasedTriage({ subject, description }), degraded: true, reason, paused });
       try {
         const result = await call({
           purpose: 'classify',
@@ -104,53 +115,73 @@ export function createAIService({ provider, settings, onUsage = () => {}, logger
         return { ...parsed.data, priority, source: 'ai', degraded: false, model: result.model };
       } catch (err) {
         logger?.warn(`AI triage fell back to rules for ticket ${ticketId}: ${err.reason ?? ''} ${err.message}`);
-        return fallback(err.reason ?? 'unavailable');
+        return fallback(err.reason ?? 'unavailable', Boolean(err.paused));
       }
     },
 
     /**
      * Draft a reply. The prompt carries: category-specific policy, FACTS for the referenced book
      * only, and at most the last N thread messages (truncated) - not the whole history.
+     *
+     * Quality gate (quality.js): a draft that breaks the tone/grounding rules gets AT MOST ONE corrective
+     * regeneration (one extra metered call); if it still fails, the policy template is returned instead.
+     * Nothing is ever sent to an author from here - an admin reviews every draft.
      */
     async draft({ ticket, author, book, books, thread, responderName }) {
       const nowDate = new Date(now());
       const recent = thread.slice(-settings.maxThreadMessages);
       const facts = buildFacts({ category: ticket.category, author, book, books, now: nowDate });
-      const templateFallback = (reason) => ({
+      // Everything a reply may legitimately cite; amounts/dates outside this set are treated as invented.
+      const groundTruth = [facts, knowledgeFor(ticket.category), ticket.subject, ticket.description, ...recent.map((m) => m.body)].join('\n');
+      const templateFallback = (reason, { paused = false, qualityProblems = [] } = {}) => ({
         ...buildTemplateDraft({ category: ticket.category, author, book, books, responderName, now: nowDate }),
         source: 'template',
         degraded: true,
         reason,
+        paused,
+        qualityProblems,
         model: null,
       });
 
-      try {
-        const result = await call({
-          purpose: 'draft',
-          ticketId: ticket.id,
-          system: buildDraftSystem(ticket.category),
-          user: buildDraftUser({
-            ticketNumber: ticket.ticket_number,
-            category: ticket.category,
-            priority: ticket.priority,
-            createdAtLabel: ticket.created_at.slice(0, 10),
-            subject: ticket.subject,
-            description: ticket.description,
-            authorName: author.name,
-            facts,
-            thread: recent,
-            responderName,
-            maxChars: settings.maxTicketChars,
-          }),
-          tool: DRAFT_TOOL,
-          maxTokens: settings.draftMaxTokens,
-        });
+      const userPrompt = buildDraftUser({
+        ticketNumber: ticket.ticket_number,
+        category: ticket.category,
+        priority: ticket.priority,
+        createdAtLabel: ticket.created_at.slice(0, 10),
+        subject: ticket.subject,
+        description: ticket.description,
+        authorName: author.name,
+        facts,
+        thread: recent,
+        responderName,
+        maxChars: settings.maxTicketChars,
+      });
+      const generate = async (user) => {
+        const result = await call({ purpose: 'draft', ticketId: ticket.id, system: buildDraftSystem(ticket.category), user, tool: DRAFT_TOOL, maxTokens: settings.draftMaxTokens });
         const parsed = draftSchema.safeParse(result.input);
         if (!parsed.success) throw new AIError('invalid_response', 'AI returned an unusable draft');
-        return { ...parsed.data, source: 'ai', degraded: false, reason: null, model: result.model };
+        return { ...parsed.data, model: result.model };
+      };
+      const assess = (draft) => checkDraftQuality({ reply: draft.reply, category: ticket.category, authorName: author.name, responderName, groundTruth });
+
+      try {
+        let draft = await generate(userPrompt);
+        let quality = assess(draft);
+        let regenerated = false;
+        if (!quality.ok) {
+          logger?.warn(`AI draft for ticket ${ticket.id} failed quality checks (${quality.problems.length}); regenerating once`);
+          regenerated = true;
+          draft = await generate(userPrompt + revisionFeedback(quality.problems));
+          quality = assess(draft);
+        }
+        if (!quality.ok) {
+          logger?.warn(`AI draft for ticket ${ticket.id} failed quality checks after one retry; using the policy template`);
+          return templateFallback('quality_check', { qualityProblems: quality.problems });
+        }
+        return { ...draft, source: 'ai', degraded: false, reason: null, paused: false, regenerated, model: draft.model };
       } catch (err) {
         logger?.warn(`AI draft fell back to template for ticket ${ticket.id}: ${err.reason ?? ''} ${err.message}`);
-        return templateFallback(err.reason ?? 'unavailable');
+        return templateFallback(err.reason ?? 'unavailable', { paused: Boolean(err.paused) });
       }
     },
   };

@@ -5,9 +5,19 @@ import { formatDate } from '../../utils/format.js';
 
 const REASONS = {
   disabled: 'AI is switched off (AI_ENABLED=false).',
-  // quota / auth problems surface as failures below; see the recent-failures list
   not_configured: 'No OPENAI_API_KEY is configured - running in manual mode.',
   cooling_down: 'The AI provider failed repeatedly; calls are paused briefly (circuit breaker) and fall back to rules/templates.',
+};
+
+// Category of the most recent provider failure (never contains credentials or raw provider text).
+const FAILURES = {
+  auth: 'the provider rejected the API key - check OPENAI_API_KEY',
+  quota: 'the AI account is out of quota - check billing',
+  rate_limited: 'the provider is rate-limiting requests',
+  timeout: 'the provider timed out',
+  unavailable: 'the provider could not be reached',
+  refused: 'the provider declined a request',
+  invalid_response: 'the provider returned an unusable answer',
 };
 
 export default function AiPage() {
@@ -26,7 +36,7 @@ export default function AiPage() {
 
       <div className={`alert ${status.available ? 'alert-ok' : 'alert-warn'}`}>
         <strong>{status.available ? 'AI assistance is active.' : 'AI assistance is currently unavailable.'}</strong>{' '}
-        {status.available ? 'New tickets are classified by the model and drafts are generated on demand.' : `${REASONS[status.reason] ?? ''} Tickets are still created and triaged by keyword rules, and drafts come from policy templates - you can always write replies manually.`}
+        {status.available ? 'New tickets are classified by the model and drafts are generated on demand.' : `${REASONS[status.reason] ?? ''}${status.lastFailure ? ` Last error: ${FAILURES[status.lastFailure.reason] ?? status.lastFailure.reason} (${formatDate(status.lastFailure.at, { time: true })}).` : ''} Tickets are still created and triaged by keyword rules, and drafts come from policy templates - you can always write replies manually.`}
       </div>
 
       <div className="tiles">

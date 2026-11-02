@@ -16,7 +16,7 @@ function royalty({ book, books, now }) {
   const subject = book ?? books.find((b) => String(b.status).startsWith('Published'));
   const notes = ['Confirm the author\'s bank details are linked in the dashboard.'];
   if (!subject) {
-    return { notes, text: `Thank you for reaching out about your royalties. Royalties are calculated quarterly and paid within 45 days of the quarter ending, to the bank account linked in your dashboard. I do not see a published book on your account yet, so no royalty has accrued - once your book is live, you will see sales and earnings in your dashboard.\n\nIf you expected a payout, tell me which book you mean and I will look into it within 48 hours.` };
+    return { notes, text: `Thank you for asking about your royalties. Royalties are calculated quarterly and paid within 45 days of the quarter ending, to the bank account linked in your dashboard. I do not see a published book on your account yet, so no royalty has accrued - once your book is live, you will see sales and earnings in your dashboard.\n\nIf you expected a payout, tell me which book you mean and I will look into it within 48 hours.` };
   }
   const rs = royaltyStatus(subject, now);
   const base = `I'm sorry for the worry around ${bookRef(subject)} - I can see why you want a clear answer, so here is exactly where things stand.`;
@@ -49,7 +49,7 @@ const BUILDERS = {
 
   'Distribution & Availability': ({ book }) => ({
     notes: ['Trigger a stock re-sync with the distribution team.'],
-    text: `Thank you for letting us know - I understand how frustrating it is when ${bookRef(book)} shows as unavailable.\n\nThis is usually a stock sync issue between our warehouse and the platform. I am triggering a re-sync with our distribution team now, and the listing should be back within 24-48 hours.\n\nNext step: if it is still showing as unavailable after 48 hours, reply here and we will escalate it directly.`,
+    text: `Thank you for letting us know - ${bookRef(book)} showing as unavailable is frustrating, and we want it back on sale quickly.\n\nThis is usually a stock sync issue between our warehouse and the platform. I am triggering a re-sync with our distribution team now, and the listing should be back within 24-48 hours.\n\nNext step: if it is still showing as unavailable after 48 hours, reply here and we will escalate it directly.`,
   }),
 
   'Book Status & Production Updates': ({ book }) => {

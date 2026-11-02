@@ -16,7 +16,7 @@ function discardUploads(err, req, _res, next) {
 }
 
 /** Author-facing ticket endpoints. Everything is scoped to the signed-in author by the service. */
-export function ticketRoutes({ tickets, repos }) {
+export function ticketRoutes({ tickets }) {
   const router = Router();
   const authorOnly = requireRole('author');
   const upload = createUploader();
@@ -47,14 +47,12 @@ export function ticketRoutes({ tickets, repos }) {
   // Attachment download: the ticket owner or any admin; always served as a download.
   router.get('/:id/attachments/:attachmentId', validate(schemas.attachment), asyncHandler(async (req, res) => {
     const { id, attachmentId } = req.valid.params;
-    const ticket = repos.tickets.findRow(id);
-    if (!ticket || (req.user.role === 'author' && ticket.author_id !== req.user.authorId)) throw notFound('Attachment not found');
-    const att = repos.tickets.findAttachment(id, attachmentId);
-    if (!att) throw notFound('Attachment not found');
-    const file = path.join(config.uploadDir, path.basename(att.stored_name));
+    // Authorization (owner or admin, attachment belongs to the ticket) is enforced in the service layer.
+    const att = tickets.getAttachmentForDownload(req.user, id, attachmentId);
+    const file = path.join(config.uploadDir, path.basename(att.storedName));
     if (!fs.existsSync(file)) throw notFound('Attachment file is no longer available');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.download(file, att.original_name);
+    res.download(file, att.originalName);
   }));
 
   return router;

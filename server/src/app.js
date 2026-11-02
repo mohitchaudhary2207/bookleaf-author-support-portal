@@ -63,7 +63,7 @@ export function createApp(container) {
   api.use(requireAuth, originCheck);
   api.get('/meta', (_req, res) => res.json({ categories: CATEGORIES, priorities: PRIORITIES, statuses: STATUSES, productionStages: PRODUCTION_STAGES, sla: config.sla }));
   api.use('/books', bookRoutes({ repos }));
-  api.use('/tickets', ticketRoutes({ tickets, repos }));
+  api.use('/tickets', ticketRoutes({ tickets }));
   api.use('/events', eventRoutes({ events }));
   api.use('/admin', adminOnly, adminRoutes({ tickets, repos, ai }));
 

@@ -12,6 +12,7 @@ const AI_REASON_TEXT = {
   auth: 'the AI provider rejected the API key',
   refused: 'the AI declined this request',
   invalid_response: 'the AI returned an unusable answer',
+  quality_check: 'the AI draft did not pass the BookLeaf tone and accuracy checks, even after one retry',
 };
 
 /** "Riya Mehta (Support Lead)" -> "Riya Mehta": the name an author should see in the sign-off. */
@@ -77,6 +78,17 @@ export function createTicketService({ db, repos, ai, events, logger }) {
   function listForAuthor(user, filters) {
     const { rows, total } = tickets.list({ ...filters, authorId: user.authorId, sort: 'updated' });
     return { items: rows.map(toAuthorTicket), total };
+  }
+
+  /**
+   * Attachment download authorization lives here (not in the route): the ticket must be accessible to the caller
+   * (owner author or any admin) and the attachment must belong to that ticket. Returns the stored-file metadata.
+   */
+  function getAttachmentForDownload(user, ticketId, attachmentId) {
+    loadAccessible(user, ticketId);
+    const attachment = tickets.findAttachment(ticketId, attachmentId);
+    if (!attachment) throw notFound('Attachment not found');
+    return { storedName: attachment.stored_name, originalName: attachment.original_name };
   }
 
   function getForAuthor(user, id) {
@@ -289,7 +301,12 @@ export function createTicketService({ db, repos, ai, events, logger }) {
         responderName: signatureName(admin.name),
       });
       const notes = [...result.admin_notes];
-      if (result.degraded) notes.unshift(`AI draft unavailable - ${AI_REASON_TEXT[result.reason] ?? result.reason}. Showing a template draft built from BookLeaf policy; review it carefully.`);
+      if (result.degraded) {
+        const why = AI_REASON_TEXT[result.reason] ?? result.reason;
+        const paused = result.paused ? ' (AI calls are temporarily paused after repeated failures; they resume automatically)' : '';
+        notes.unshift(`AI draft unavailable - ${why}${paused}. Showing a template draft built from BookLeaf policy; review it carefully.`);
+        if (result.qualityProblems?.length) notes.push(`Rejected AI draft: ${result.qualityProblems.join('; ')}.`);
+      }
       aiRepo.saveDraft({ ticketId: id, body: result.reply, source: result.source, model: result.model, inputHash: hash, notes });
       activity(id, admin, result.degraded ? 'draft_template' : 'draft_generated', result.model ?? undefined);
       return draftDto(aiRepo.getDraft(id), { cached: false });
@@ -301,7 +318,7 @@ export function createTicketService({ db, repos, ai, events, logger }) {
 
   return {
     // author
-    createTicket, listForAuthor, getForAuthor, authorReply, authorClose,
+    createTicket, listForAuthor, getForAuthor, getAttachmentForDownload, authorReply, authorClose,
     // admin
     listForAdmin, getForAdmin, updateTicket, adminReply, addNote, reclassify, getDraft,
     // internals exposed for tests / bootstrapping

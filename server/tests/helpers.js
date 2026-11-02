@@ -25,6 +25,7 @@ export function createFakeProvider() {
     calls: [],
     failWith: null,
     delayMs: 0,
+    replyQueue: [], // optional: successive draft replies (consumed first) to script retry / quality-gate scenarios
     classification: { category: 'Royalty & Payments', priority: 'High', confidence: 0.92, rationale: 'Author reports missing royalty.' },
     reply: 'Hi Priya,\n\nThank you for flagging this. Here is exactly where things stand and what happens next.\n\nWarm regards,\nRiya Mehta\nBookLeaf Support',
     async callTool({ system, user, tool }) {
@@ -33,7 +34,7 @@ export function createFakeProvider() {
       if (fake.failWith) throw fake.failWith;
       const usage = { inputTokens: 100, outputTokens: 40, cacheReadTokens: 0 };
       if (tool.name === 'classify_ticket') return { input: fake.classification, usage, model: 'fake-model' };
-      return { input: { reply: fake.reply, admin_notes: ['Check bank details'] }, usage, model: 'fake-model' };
+      return { input: { reply: fake.replyQueue.length ? fake.replyQueue.shift() : fake.reply, admin_notes: ['Check bank details'] }, usage, model: 'fake-model' };
     },
   };
   return fake;
